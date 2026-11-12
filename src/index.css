@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+/* Sistema de diseno de Stitch ("TecNM Chilpancingo Institutional System", ver DESIGN.md).
+   Con esto existen clases como bg-marino, text-oro, border-borde, bg-exito-tinte, etc. */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-titulo: "Plus Jakarta Sans", "Inter", ui-sans-serif, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Azul marino TecNM: acciones principales y menu */
+  --color-marino: #1b396a;
+  --color-marino-osc: #12284b;
+  --color-marino-noche: #0e2244;
+  --color-marino-tinte: #e8eef7;
+  /* Dorado institucional: solo acentos (activo, metricas, destacados) */
+  --color-oro: #b38e5d;
+  --color-oro-claro: #e9c08a;
+  --color-oro-tinte: #f9f6f0;
+  --color-oro-borde: #d8c2a5;
+  /* Neutros */
+  --color-lienzo: #f6f7f9;
+  --color-borde: #e4e7ec;
+  --color-borde-suave: #f2f4f7;
+  --color-texto: #101828;
+  --color-texto-2: #475467;
+  --color-tenue: #98a2b3;
+  /* Estados */
+  --color-exito: #12b76a;
+  --color-exito-texto: #027a48;
+  --color-exito-tinte: #ecfdf3;
+  --color-exito-borde: #a6f4c5;
+  --color-aviso: #f79009;
+  --color-aviso-texto: #b54708;
+  --color-aviso-tinte: #fef0c7;
+  --color-aviso-borde: #fedf89;
+  --color-peligro: #d92d20;
+  --color-peligro-texto: #b42318;
+  --color-peligro-tinte: #fef3f2;
+  --color-peligro-borde: #fecdca;
+  --color-info: #2e90fa;
+  --color-info-texto: #175cd3;
+  --color-info-tinte: #eff8ff;
+  --color-info-borde: #b2ddff;
+
+  /* Superficies (tarjetas, barras, modales) y bloques grandes de marca (menu lateral, pie, panel del login) */
+  --color-superficie: #ffffff;
+  --color-marca: #1b396a;
+  --color-oro-texto: #7a5a2e;
+  --color-oro-hover: #f3ead9;
+  --color-tostada: #101828;
+}
+
+/* ---------- Modo oscuro ----------
+   Se activa con <html data-tema="oscuro"> (ver utils/tema.js). Solo se cambian los colores del sistema
+   de diseno: las pantallas no cambian, porque todas usan bg-superficie, text-texto, border-borde, etc. */
+:root[data-tema="oscuro"] {
+  color-scheme: dark;
+  --color-lienzo: #0a1120;
+  --color-superficie: #111b2e;
+  --color-borde: #22304a;
+  --color-borde-suave: #18233a;
+  --color-texto: #e8ecf4;
+  --color-texto-2: #a5b0c4;
+  --color-tenue: #6c7a93;
+
+  /* El azul de los botones se aclara un poco para que resalte sobre fondo oscuro */
+  --color-marino: #2f62b8;
+  --color-marino-osc: #3d72cc;
+  --color-marino-noche: #08142a;
+  --color-marino-tinte: #172a4b;
+  --color-marca: #0d1a33;
+
+  --color-oro: #c9a273;
+  --color-oro-claro: #edc993;
+  --color-oro-tinte: #272013;
+  --color-oro-borde: #5e4b2e;
+  --color-oro-texto: #edc993;
+  --color-oro-hover: #33291a;
+
+  --color-exito: #32d583;
+  --color-exito-texto: #6ce9a6;
+  --color-exito-tinte: #0c2a1e;
+  --color-exito-borde: #175c3e;
+  --color-aviso: #fdb022;
+  --color-aviso-texto: #fec84b;
+  --color-aviso-tinte: #2d220c;
+  --color-aviso-borde: #6b4c10;
+  --color-peligro: #f97066;
+  --color-peligro-texto: #fda29b;
+  --color-peligro-tinte: #2c1414;
+  --color-peligro-borde: #7a271a;
+  --color-info: #53b1fd;
+  --color-info-texto: #84caff;
+  --color-info-tinte: #0e2239;
+  --color-info-borde: #1d4c7e;
+  --color-tostada: #24324f;
+}
+/* El azul marino como TEXTO, borde o anillo se ve apagado sobre fondo oscuro: ahi se usa un azul claro.
+   (Como fondo de botones sigue siendo --color-marino con texto blanco.) */
+:root[data-tema="oscuro"] .text-marino { color: #8fb6f5; }
+:root[data-tema="oscuro"] .border-marino { border-color: #5b8de0; }
+:root[data-tema="oscuro"] .ring-marino { --tw-ring-color: #5b8de0; }
+:root[data-tema="oscuro"] .accent-marino { accent-color: #5b8de0; }
+:root[data-tema="oscuro"] .focus-within\:border-marino:focus-within { border-color: #5b8de0; }
+:root[data-tema="oscuro"] .shadow-sm,
+:root[data-tema="oscuro"] .shadow-md,
+:root[data-tema="oscuro"] .shadow-lg,
+:root[data-tema="oscuro"] .shadow-xl,
+:root[data-tema="oscuro"] .shadow-2xl { --tw-shadow-color: rgb(0 0 0 / 0.45); }
+:root[data-tema="oscuro"] .rayado {
+  background-image: repeating-linear-gradient(-45deg, transparent 0 6px, rgba(255, 255, 255, 0.05) 6px 12px);
+}
+:root[data-tema="oscuro"] .scroll-fino::-webkit-scrollbar-thumb { background: #2c3a55; }
+:root[data-tema="oscuro"] .cuadricula { background-color: var(--color-marca); }
+
+html { -webkit-font-smoothing: antialiased; }
+body { background: var(--color-lienzo); color: var(--color-texto); }
+/* Cambio de tema suave (sin animar al cargar la pagina) */
+html.tema-transicion, html.tema-transicion * {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease !important;
+}
+
+.font-titulo { font-family: var(--font-titulo); letter-spacing: -0.015em; }
+.tabular { font-variant-numeric: tabular-nums; }
+.etiqueta { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+
+/* Iconos de Google: <Icono nombre="dashboard" /> */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 1;
+}
+.icono-relleno { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+/* Cuadricula fina del panel azul del login y registro */
+.cuadricula {
+  background-color: var(--color-marca);
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Rayas para reservas liberadas y espacios en mantenimiento */
+.rayado {
+  background-image: repeating-linear-gradient(-45deg, transparent 0 6px, rgba(16, 24, 40, 0.05) 6px 12px);
+}
+
+/* Esqueleto de carga */
+@keyframes pulso { 50% { opacity: 0.45; } }
+.esqueleto { background: var(--color-borde-suave); border-radius: 6px; animation: pulso 1.4s ease-in-out infinite; }
+
+.scroll-fino::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroll-fino::-webkit-scrollbar-thumb { background: #cfd4dc; border-radius: 9999px; }
+
+:where(a, button, summary, [role="switch"], [tabindex]):focus-visible { outline: 2px solid var(--color-info); outline-offset: 2px; }
+input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:focus, textarea:focus-visible { outline: none !important; }
