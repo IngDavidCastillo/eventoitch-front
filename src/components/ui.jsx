@@ -195,17 +195,20 @@ export function Aviso({ tipo = 'info', titulo, children, onCerrar, className = '
   );
 }
 
-export function Esqueleto({ className = '' }) {
-  return <div className={`esqueleto ${className}`} />;
+export function Esqueleto({ className = '', style }) {
+  return <div className={`esqueleto ${className}`} style={style} aria-hidden="true" />;
 }
 
 export function EsqueletoTabla({ filas = 5, columnas = 5 }) {
   return (
-    <div className="p-5 space-y-3">
+    <div className="p-5 space-y-4" role="status" aria-label="Cargando">
       {Array.from({ length: filas }, (_, i) => (
-        <div key={i} className="flex gap-4">
+        <div key={i} className="flex items-center gap-4">
           {Array.from({ length: columnas }, (_, j) => (
-            <Esqueleto key={j} className={`h-4 ${j === 0 ? 'w-24' : 'flex-1'}`} />
+            // anchos distintos por fila para que parezca una tabla de verdad
+            <div key={j} className={j === 0 ? 'w-24 shrink-0' : 'flex-1'}>
+              <Esqueleto className="h-4" style={{ width: j === 0 ? '100%' : `${55 + ((i * 7 + j * 13) % 40)}%`, animationDelay: `${i * 80}ms` }} />
+            </div>
           ))}
         </div>
       ))}

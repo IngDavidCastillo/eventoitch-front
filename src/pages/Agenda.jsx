@@ -9,7 +9,8 @@ import useRecargaAlCrear from '../hooks/useRecargaAlCrear';
 import { liberarReserva } from '../api/agenda';
 import Icono from '../components/Icono';
 import { Aviso, Boton, Estado, ErrorServicio, Esqueleto, Modal, Segmentado, Tarjeta } from '../components/ui';
-import { ROLES_QUE_RESERVAN, folio, nombreEspacio, nombreEvento } from '../utils/formato';
+import { MARGEN_MINUTOS, ROLES_QUE_RESERVAN, folio, nombreEspacio, nombreEvento } from '../utils/formato';
+import { preferencia } from '../utils/preferencias';
 import { aIso, deIso, diaSemana, diasEntre, fechaCorta, fechaLarga, hoyIso, lunesDe, minutos, nombreMes, rangoSemana, sumarDias } from '../utils/fechas';
 
 const INICIO = 7; // 07:00
@@ -73,6 +74,25 @@ function MiniMes({ fecha, onElegir, conReservas }) {
   );
 }
 
+// Franja de preparacion despues de una reserva: ms-agenda no deja reservar el mismo espacio ahi.
+function Preparacion({ r, espacios, compacto }) {
+  const [borde] = colorDe(espacios, r.espacioId);
+  const fin = Math.min(minutos(r.horaFin) + MARGEN_MINUTOS, FIN * 60);
+  const top = ((minutos(r.horaFin) - INICIO * 60) / 60) * ALTO;
+  const alto = ((fin - minutos(r.horaFin)) / 60) * ALTO - 3;
+  if (MARGEN_MINUTOS <= 0 || alto <= 4) return null;
+  return (
+    <div
+      aria-hidden="true"
+      title={`Preparación de ${nombreEspacio(espacios, r.espacioId)} (${MARGEN_MINUTOS} min)`}
+      style={{ top, height: alto, borderLeftColor: borde }}
+      className="absolute left-1 right-1 rounded-md border border-dashed border-borde border-l-[3px] rayado px-1.5 flex items-center overflow-hidden pointer-events-none opacity-80"
+    >
+      {!compacto && alto > 14 && <span className="text-[10px] text-texto-2 truncate">Preparación</span>}
+    </div>
+  );
+}
+
 function Bloque({ r, espacios, eventos, onClick, compacto }) {
   const [borde, fondo] = colorDe(espacios, r.espacioId);
   const top = ((minutos(r.horaInicio) - INICIO * 60) / 60) * ALTO;
@@ -82,7 +102,7 @@ function Bloque({ r, espacios, eventos, onClick, compacto }) {
     <button
       onClick={() => onClick(r)}
       style={{ top, height: alto, borderLeftColor: liberada ? 'var(--color-tenue)' : borde, background: liberada ? 'var(--color-borde-suave)' : fondo }}
-      className={`absolute left-1 right-1 rounded-md border border-borde border-l-[3px] px-1.5 py-1 text-left overflow-hidden hover:shadow-md transition-shadow ${liberada ? 'rayado' : ''}`}
+      className={`aparecer absolute left-1 right-1 rounded-md border border-borde border-l-[3px] px-1.5 py-1 text-left overflow-hidden hover:shadow-md hover:-translate-y-px transition-[box-shadow,translate] ${liberada ? 'rayado' : ''}`}
     >
       <p className={`text-[11px] font-semibold leading-tight truncate ${liberada ? 'text-texto-2 line-through' : 'text-texto'}`}>{nombreEvento(eventos, r.eventoId)}</p>
       {!compacto && alto > 34 && <p className="text-[10px] text-texto-2 truncate">{nombreEspacio(espacios, r.espacioId)}</p>}
@@ -169,7 +189,9 @@ export default function Agenda() {
   const { abrir } = useNuevaReserva();
   const puede = ROLES_QUE_RESERVAN.includes(sesion.rol);
   const [fecha, setFecha] = useState(hoyIso());
-  const [vista, setVista] = useState(() => (window.innerWidth < 768 ? 'dia' : 'semana'));
+  // Vista inicial: la de Mi perfil > Preferencias; en "auto", dia en celular y semana en pantalla grande
+  const [vista, setVista] = useState(() => (preferencia('vistaAgenda') !== 'auto' ? preferencia('vistaAgenda') : window.innerWidth < 768 ? 'dia' : 'semana'));
+  const conLiberadas = preferencia('liberadasAgenda');
   const [ocultos, setOcultos] = useState(new Set());
   const [abierta, setAbierta] = useState(null);
 
@@ -179,7 +201,7 @@ export default function Agenda() {
   const d = datos.datos;
 
   const columnas = vista === 'semana' ? diasEntre(lunes, sumarDias(lunes, 6)) : [fecha];
-  const visibles = useMemo(() => (d ? d.reservas.filter((r) => !ocultos.has(r.espacioId)) : []), [d, ocultos]);
+  const visibles = useMemo(() => (d ? d.reservas.filter((r) => !ocultos.has(r.espacioId) && (conLiberadas || r.estado !== 'LIBERADA')) : []), [d, ocultos, conLiberadas]);
   const conReservas = useMemo(() => new Set(visibles.filter((r) => r.estado === 'RESERVADA').map((r) => r.fecha)), [visibles]);
 
   const mover = (n) => setFecha((f) => sumarDias(f, vista === 'semana' ? 7 * n : n));
@@ -264,7 +286,7 @@ export default function Agenda() {
                 ))}
               </div>
             ) : (
-              <ul className="space-y-2">
+              <ul className="escalonado space-y-2">
                 {d.espacios.map((e) => {
                   const [color] = colorDe(d.espacios, e.id);
                   const mant = e.estado === 'MANTENIMIENTO';
@@ -337,7 +359,17 @@ export default function Agenda() {
                         className={`relative border-l border-borde ${c === hoyIso() ? 'bg-marino-tinte/20' : ''}`}
                         style={{ height: ALTO * (FIN - INICIO), backgroundImage: `repeating-linear-gradient(to bottom, transparent 0 ${ALTO - 1}px, var(--color-borde-suave) ${ALTO - 1}px ${ALTO}px)` }}
                       >
-                        {!d && datos.cargando && <Esqueleto className="absolute left-1 right-1 top-24 h-16" />}
+                        {!d && datos.cargando && (
+                          <>
+                            <Esqueleto className="absolute left-1 right-1 h-16" style={{ top: ALTO * (1 + (c.charCodeAt(9) % 3)) }} />
+                            <Esqueleto className="absolute left-1 right-1 h-24" style={{ top: ALTO * (5 + (c.charCodeAt(9) % 2)) }} />
+                          </>
+                        )}
+                        {delDia
+                          .filter((r) => r.estado === 'RESERVADA')
+                          .map((r) => (
+                            <Preparacion key={'p' + r.id} r={r} espacios={d.espacios} compacto={vista === 'semana'} />
+                          ))}
                         {delDia.map((r) => (
                           <Bloque key={r.id} r={r} espacios={d.espacios} eventos={d.eventos} onClick={setAbierta} compacto={vista === 'semana'} />
                         ))}

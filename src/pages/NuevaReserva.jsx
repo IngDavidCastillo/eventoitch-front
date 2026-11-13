@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { consultarDisponibilidad, crearReserva, crearVariosDias, moverReserva } from '../api/agenda';
 import { cargarCatalogos } from '../hooks/useReservas';
+import { useServicios } from '../api/servicios';
 import Icono from '../components/Icono';
 import { Aviso, Boton, Campo, Entrada, Esqueleto, Estado, Interruptor, Panel, Selector } from '../components/ui';
-import { folio, iconoEspacio, nombreEspacio, tipoEspacio } from '../utils/formato';
+import { MARGEN_MINUTOS, folio, iconoEspacio, nombreEspacio, tipoEspacio } from '../utils/formato';
+import { cambiarPreferencia, preferencia } from '../utils/preferencias';
 import { diasEntre, fechaCorta, horas, hoyIso, minutos } from '../utils/fechas';
 
 const RAPIDOS = [
@@ -21,15 +23,30 @@ const sumarMin = (h, m) => {
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 };
 
+// Hora actual en formato HH:MM (la del navegador)
+function horaActual() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// Si ya pasaron las 10:00, el formulario nuevo empieza en la siguiente hora en punto (para no proponer una hora pasada)
+function inicioSugerido() {
+  const h = new Date().getHours() + 1;
+  return h <= 10 ? '10:00' : `${String(Math.min(h, 22)).padStart(2, '0')}:00`;
+}
+
+// Formulario nuevo. Toma de Mi perfil > Preferencias la duracion, el espacio favorito y el ultimo evento usado
 function vacio(inicial) {
+  const ini = inicioSugerido();
+  const evento = inicial?.eventoId ?? (preferencia('recordarEvento') ? preferencia('ultimoEvento') : null);
   return {
-    eventoId: inicial?.eventoId ? String(inicial.eventoId) : '',
-    espacioId: inicial?.espacioId ?? null,
+    eventoId: evento ? String(evento) : '',
+    espacioId: inicial?.espacioId ?? (inicial?.id ? null : preferencia('espacioFavorito')),
     variosDias: false,
     fecha: inicial?.fecha ?? hoyIso(),
     fechaFin: inicial?.fecha ?? hoyIso(),
-    horaInicio: inicial?.horaInicio ?? '10:00',
-    horaFin: inicial?.horaFin ?? '12:00',
+    horaInicio: inicial?.horaInicio ?? ini,
+    horaFin: inicial?.horaFin ?? sumarMin(ini, Number(preferencia('duracion')) || 120),
   };
 }
 
@@ -56,6 +73,17 @@ export default function NuevaReserva({ abierta, inicial, onCerrar, onCreada }) {
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState(null);
   const [creadas, setCreadas] = useState(null);
+  // Indicador en vivo: si ms-espacios (de Roberta) no esta, ms-agenda no deja reservar (responde 503)
+  const { servicios } = useServicios();
+  const espaciosCaido = servicios.some((s) => s.id === 'MS-ESPACIOS' && !s.vivo);
+  // Hora actual (HH:MM), se renueva cada 30 s mientras el panel esta abierto: no se puede reservar una hora de hoy que ya paso
+  const [ahora, setAhora] = useState(horaActual);
+  useEffect(() => {
+    if (!abierta) return;
+    setAhora(horaActual());
+    const t = setInterval(() => setAhora(horaActual()), 30000);
+    return () => clearInterval(t);
+  }, [abierta]);
 
   // Al abrir: limpiar el formulario y cargar espacios y eventos
   useEffect(() => {
@@ -63,7 +91,13 @@ export default function NuevaReserva({ abierta, inicial, onCerrar, onCreada }) {
     setForm(vacio(inicial));
     setError(null);
     setCreadas(null);
-    cargarCatalogos(sesion.token).then(setCat).catch(() => setCat({ espacios: [], eventos: [] }));
+    cargarCatalogos(sesion.token)
+      .then((c) => {
+        setCat(c);
+        // Si el espacio favorito ya no existe, no se deja elegido
+        if (!inicial?.espacioId) setForm((f) => (f.espacioId && !c.espacios.some((e) => e.id === f.espacioId) ? { ...f, espacioId: null } : f));
+      })
+      .catch(() => setCat({ espacios: [], eventos: [] }));
   }, [abierta, inicial, sesion.token]);
 
   const dias = useMemo(() => {
@@ -73,11 +107,12 @@ export default function NuevaReserva({ abierta, inicial, onCerrar, onCreada }) {
   }, [form.variosDias, form.fecha, form.fechaFin]);
 
   const horarioOk = form.horaInicio && form.horaFin && minutos(form.horaFin) > minutos(form.horaInicio);
+  const horaPasada = form.fecha === hoyIso() && form.horaInicio && minutos(form.horaInicio) <= minutos(ahora);
   const problemaFechas = form.variosDias && form.fechaFin < form.fecha ? 'La fecha final no puede ser antes de la inicial' : dias.length > 31 ? 'Máximo 31 días por solicitud' : null;
 
   // Revision de disponibilidad por dia (espera medio segundo despues del ultimo cambio)
   useEffect(() => {
-    if (!abierta || !form.espacioId || !horarioOk || problemaFechas || dias.length === 0) {
+    if (!abierta || !form.espacioId || !horarioOk || horaPasada || problemaFechas || dias.length === 0) {
       setRevision({ cargando: false, dias: [] });
       return;
     }
@@ -88,7 +123,7 @@ export default function NuevaReserva({ abierta, inicial, onCerrar, onCreada }) {
         dias.map((fecha) =>
           consultarDisponibilidad({ espacioId: form.espacioId, fecha, horaInicio: form.horaInicio, horaFin: form.horaFin }, sesion.token)
             // al mover, la propia reserva no cuenta como choque
-            .then((r) => ({ fecha, conflictos: r.conflictos.filter((c) => c.id !== inicial?.id) }))
+            .then((r) => ({ fecha, margen: r.margenMinutos, conflictos: r.conflictos.filter((c) => c.id !== inicial?.id) }))
             .catch((e) => ({ fecha, error: e.message })),
         ),
       );
@@ -98,13 +133,16 @@ export default function NuevaReserva({ abierta, inicial, onCerrar, onCreada }) {
       vigente = false;
       clearTimeout(t);
     };
-  }, [abierta, form.espacioId, form.horaInicio, form.horaFin, dias, horarioOk, problemaFechas, sesion.token, inicial]);
+  }, [abierta, form.espacioId, form.horaInicio, form.horaFin, dias, horarioOk, horaPasada, problemaFechas, sesion.token, inicial]);
 
   const cambiar = (campo, valor) => setForm((f) => ({ ...f, [campo]: valor }));
   const choques = revision.dias.filter((d) => d.conflictos?.length).length;
   const fallos = revision.dias.filter((d) => d.error).length;
   const espacio = cat?.espacios.find((e) => e.id === form.espacioId);
-  const listo = form.eventoId && form.espacioId && horarioOk && !problemaFechas && dias.length && !revision.cargando && revision.dias.length === dias.length && choques === 0 && fallos === 0;
+  const margen = revision.dias.find((d) => d.margen != null)?.margen ?? MARGEN_MINUTOS;
+  // true si de verdad se cruza; false si solo queda sin el tiempo de preparacion
+  const seCruza = (c) => minutos(c.horaInicio) < minutos(form.horaFin) && minutos(c.horaFin) > minutos(form.horaInicio);
+  const listo = form.eventoId && form.espacioId && horarioOk && !horaPasada && !problemaFechas && dias.length && !revision.cargando && revision.dias.length === dias.length && choques === 0 && fallos === 0;
 
   async function confirmar() {
     setEnviando(true);
@@ -116,9 +154,12 @@ export default function NuevaReserva({ abierta, inicial, onCerrar, onCreada }) {
       else if (form.variosDias && dias.length > 1) r = await crearVariosDias({ ...base, fechaInicio: form.fecha, fechaFin: form.fechaFin }, sesion.token);
       else r = [await crearReserva({ ...base, fecha: form.fecha }, sesion.token)];
       setCreadas(r);
+      if (!moviendo && preferencia('recordarEvento')) cambiarPreferencia('ultimoEvento', Number(form.eventoId));
       onCreada?.(r);
     } catch (e) {
-      setError({ texto: e.message, detalles: e.detalles });
+      const texto =
+        e.status === 503 ? 'No se puede reservar ahorita: el servicio de Espacios no está conectado. Intenta cuando vuelva a estar en línea.' : e.message;
+      setError({ texto, detalles: e.status === 503 ? [e.message] : e.detalles });
     } finally {
       setEnviando(false);
     }
@@ -131,7 +172,19 @@ export default function NuevaReserva({ abierta, inicial, onCerrar, onCreada }) {
       Listo
     </Boton>
   ) : (
-    <div className="flex flex-wrap items-center gap-3">
+    <>
+      {error && (
+        <Aviso tipo="error" titulo={error.texto} className="mb-3" onCerrar={() => setError(null)}>
+          {error.detalles?.length > 0 && (
+            <ul className="list-disc pl-4 space-y-0.5">
+              {error.detalles.map((d) => (
+                <li key={d}>{d}</li>
+              ))}
+            </ul>
+          )}
+        </Aviso>
+      )}
+      <div className="flex flex-wrap items-center gap-3">
       <div className="flex-1 min-w-[180px] text-sm">
         <p className="font-semibold text-texto">
           {dias.length} {dias.length === 1 ? 'día' : 'días'} · {totalHrs} h por día
@@ -147,6 +200,7 @@ export default function NuevaReserva({ abierta, inicial, onCerrar, onCreada }) {
         {moviendo ? 'Mover reserva' : dias.length > 1 ? `Confirmar ${dias.length} reservas` : 'Confirmar reserva'}
       </Boton>
     </div>
+    </>
   );
 
   return (
@@ -176,15 +230,10 @@ export default function NuevaReserva({ abierta, inicial, onCerrar, onCreada }) {
         </div>
       ) : (
         <>
-          {error && (
-            <Aviso tipo="error" titulo={error.texto} className="mb-6" onCerrar={() => setError(null)}>
-              {error.detalles?.length > 0 && (
-                <ul className="list-disc pl-4 space-y-0.5">
-                  {error.detalles.map((d) => (
-                    <li key={d}>{d}</li>
-                  ))}
-                </ul>
-              )}
+          {espaciosCaido && (
+            <Aviso tipo="aviso" titulo="El servicio de Espacios no está conectado" className="mb-6">
+              Mientras no vuelva a estar en línea no se pueden confirmar reservas, porque no hay forma de revisar que el espacio exista y no esté en
+              mantenimiento. Puedes llenar la solicitud y confirmarla cuando el indicador de Servicios lo marque en verde.
             </Aviso>
           )}
 
@@ -280,8 +329,8 @@ export default function NuevaReserva({ abierta, inicial, onCerrar, onCreada }) {
                 </p>
               )}
               <div className="grid grid-cols-2 gap-3 pt-3 border-t border-borde">
-                <Campo etiqueta="Hora de inicio">
-                  <Entrada icono="schedule" type="time" value={form.horaInicio} onChange={(e) => cambiar('horaInicio', e.target.value)} />
+                <Campo etiqueta="Hora de inicio" error={horaPasada ? `Esa hora ya pasó (son las ${ahora})` : null}>
+                  <Entrada icono="schedule" type="time" value={form.horaInicio} error={horaPasada} onChange={(e) => cambiar('horaInicio', e.target.value)} />
                 </Campo>
                 <Campo etiqueta="Hora de fin" error={!horarioOk && form.horaFin ? 'Debe ser después del inicio' : null}>
                   <Entrada icono="schedule" type="time" value={form.horaFin} error={!horarioOk} onChange={(e) => cambiar('horaFin', e.target.value)} />
@@ -329,9 +378,15 @@ export default function NuevaReserva({ abierta, inicial, onCerrar, onCreada }) {
             ) : (
               <>
                 {choques > 0 && (
-                  <Aviso tipo="error" titulo={`El espacio ya está ocupado en ${choques} de ${dias.length} ${dias.length === 1 ? 'día' : 'días'}`} className="mb-3">
+                  <Aviso tipo="error" titulo={`El espacio no está libre en ${choques} de ${dias.length} ${dias.length === 1 ? 'día' : 'días'}`} className="mb-3">
                     Cambia el horario, la fecha o el espacio. No se puede confirmar con choques.
                   </Aviso>
+                )}
+                {margen > 0 && (
+                  <p className="flex items-center gap-1.5 text-xs text-texto-2 mb-2">
+                    <Icono nombre="cleaning_services" className="text-[16px]" />
+                    Entre reservas del mismo espacio se dejan {margen} min para preparar la sala.
+                  </p>
                 )}
                 <ul className="space-y-2 max-h-72 overflow-y-auto scroll-fino pr-1">
                   {revision.dias.map((d) => (
@@ -351,7 +406,9 @@ export default function NuevaReserva({ abierta, inicial, onCerrar, onCreada }) {
                       </div>
                       {d.conflictos?.map((c) => (
                         <p key={c.id} className="text-xs text-peligro-texto mt-1.5 pl-8">
-                          Choca con la reserva {folio(c)} del evento {c.eventoId}, de {c.horaInicio} a {c.horaFin}.
+                          {seCruza(c)
+                            ? `Choca con la reserva ${folio(c)} del evento ${c.eventoId}, de ${c.horaInicio} a ${c.horaFin}.`
+                            : `Muy pegada a la reserva ${folio(c)} (de ${c.horaInicio} a ${c.horaFin}): se dejan ${margen} min para preparar la sala.`}
                         </p>
                       ))}
                       {d.error && <p className="text-xs text-aviso-texto mt-1.5 pl-8">{d.error}</p>}

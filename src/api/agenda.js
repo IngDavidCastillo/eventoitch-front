@@ -43,3 +43,8 @@ export function liberarReserva(id, token) {
 export function liberarEvento(eventoId, token) {
   return pedir(`${BASE}/evento/${eventoId}/liberar`, { metodo: 'PATCH', token });
 }
+
+// GET /reservas/mias?desde= -> las reservas que hizo el usuario del token, de esa fecha en adelante
+export function buscarMias(desde, token) {
+  return pedir(`${BASE}/mias${desde ? `?desde=${desde}` : ''}`, { token });
+}

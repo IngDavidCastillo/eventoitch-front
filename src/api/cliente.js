@@ -27,13 +27,31 @@ export class ErrorApi extends Error {
 }
 
 // Quien quiera enterarse de la actividad o de un 401 se suscribe aqui (lo usa AuthContext)
-const oyentes = { actividad: new Set(), noAutorizado: new Set() };
+const oyentes = { actividad: new Set(), noAutorizado: new Set(), carga: new Set() };
+
+// Cuantas peticiones van en camino (lo usa la barra de carga de arriba)
+let pendientes = 0;
+const avisarCarga = (n) => {
+  pendientes += n;
+  oyentes.carga.forEach((fn) => fn(pendientes));
+};
+export const peticionesPendientes = () => pendientes;
 export function escuchar(evento, fn) {
   oyentes[evento].add(fn);
   return () => oyentes[evento].delete(fn);
 }
 
-export async function pedir(url, { metodo = 'GET', cuerpo, token, tiempo = 15000 } = {}) {
+// Igual que hablar(), pero cuenta la peticion para la barra de carga
+export async function pedir(url, opciones) {
+  avisarCarga(1);
+  try {
+    return await hablar(url, opciones);
+  } finally {
+    avisarCarga(-1);
+  }
+}
+
+async function hablar(url, { metodo = 'GET', cuerpo, token, tiempo = 15000 } = {}) {
   const headers = {};
   // Con FormData (subir foto) el navegador pone solo el Content-Type multipart con su separador
   const esArchivo = typeof FormData !== 'undefined' && cuerpo instanceof FormData;

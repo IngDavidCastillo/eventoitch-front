@@ -247,7 +247,7 @@ export default function Usuarios() {
                   <th className="px-5 py-2.5" />
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="escalonado">
                 {lista.map((u) => {
                   const doc = documento(u);
                   const yo = u.id === sesion.usuarioId;

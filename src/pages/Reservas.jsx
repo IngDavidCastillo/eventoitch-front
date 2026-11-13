@@ -10,6 +10,7 @@ import Icono from '../components/Icono';
 import { Aviso, Boton, Entrada, Estado, ErrorServicio, EsqueletoTabla, Modal, Pestanas, Selector, Tarjeta, TituloPagina, Vacio } from '../components/ui';
 import { ROLES_QUE_RESERVAN, folio, nombreEspacio, nombreEvento } from '../utils/formato';
 import { diasEntre, fechaCorta, hoyIso, lunesDe, sumarDias } from '../utils/fechas';
+import { preferencia } from '../utils/preferencias';
 
 const RANGOS = [
   { valor: 'semana', texto: 'Esta semana', calc: () => [lunesDe(hoyIso()), sumarDias(lunesDe(hoyIso()), 6)] },
@@ -62,7 +63,7 @@ function Tabla({ lista, ...resto }) {
             <th className="px-5 py-2.5" />
           </tr>
         </thead>
-        <tbody>
+        <tbody className="escalonado">
           {lista.map((r) => (
             <Fila key={r.id} r={r} {...resto} />
           ))}
@@ -97,7 +98,7 @@ export default function Reservas() {
   const { abrir } = useNuevaReserva();
   const puede = ROLES_QUE_RESERVAN.includes(sesion.rol);
 
-  const [rango, setRango] = useState('dos');
+  const [rango, setRango] = useState(() => (RANGOS.some((r) => r.valor === preferencia('rangoReservas')) ? preferencia('rangoReservas') : 'dos'));
   const [desde, hasta] = useMemo(() => RANGOS.find((r) => r.valor === rango).calc(), [rango]);
   const [pestana, setPestana] = useState('todas');
   const [espacio, setEspacio] = useState('');
@@ -227,7 +228,7 @@ export default function Reservas() {
           <Tabla lista={lista} {...comunes} />
         </Tarjeta>
       ) : pestana === 'evento' ? (
-        <div className="space-y-4">
+        <div className="escalonado space-y-4">
           {agrupar('eventoId').map(([id, rs]) => {
             const vivas = rs.filter((r) => r.estado === 'RESERVADA').length;
             return (
@@ -251,7 +252,7 @@ export default function Reservas() {
           })}
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="escalonado space-y-4">
           {agrupar('espacioId').map(([id, rs]) => {
             const e = d.espacios.find((x) => x.id === id);
             return (
