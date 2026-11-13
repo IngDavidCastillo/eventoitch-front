@@ -1,6 +1,7 @@
 // Iniciar sesion con ms-autenticacion. Usuario = numero de control, RFC o correo.
 import { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { preferencia } from '../utils/preferencias';
 import { useAuth } from '../context/AuthContext';
 import Icono from '../components/Icono';
 import { Aviso, Boton, Campo, Entrada } from '../components/ui';
@@ -18,7 +19,7 @@ export default function Login() {
   const [error, setError] = useState(null);
   const [errores, setErrores] = useState({});
 
-  if (sesion) return <Navigate to="/panel" replace />;
+  if (sesion) return <Navigate to={preferencia('inicio')} replace />;
 
   const cambiar = (e) => {
     const { name, value, type, checked } = e.target;
@@ -38,7 +39,7 @@ export default function Login() {
     try {
       await iniciarSesion(form.username.trim(), form.password, form.recordar);
       setCierre(null);
-      navigate('/panel', { replace: true });
+      navigate(preferencia('inicio'), { replace: true });
     } catch (err) {
       setError(
         err.status === 401

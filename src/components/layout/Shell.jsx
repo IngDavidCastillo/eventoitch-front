@@ -1,14 +1,17 @@
 // Esqueleto de las pantallas privadas: menu lateral azul (escritorio), barra superior,
 // pie institucional y barra de pestanas abajo en celular. Tambien abre el panel "Nueva reserva"
 // desde cualquier pantalla con useNuevaReserva().
-import { createContext, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ROLES_QUE_RESERVAN, nombreCompleto, nombreTipo } from '../../utils/formato';
 import Icono from '../Icono';
-import { Avatar, Boton } from '../ui';
+import { Avatar, Boton, Modal } from '../ui';
+import { preferencia } from '../../utils/preferencias';
 import Marca from './Marca';
 import BotonTema from '../BotonTema';
+import IndicadorServicios from '../IndicadorServicios';
+import BarraCarga from '../BarraCarga';
 import NuevaReserva from '../../pages/NuevaReserva';
 
 const ReservaContext = createContext(null);
@@ -22,21 +25,6 @@ const MENU = [
 ];
 
 const TITULOS = { '/panel': 'Panel principal', '/agenda': 'Agenda', '/reservas': 'Reservas', '/usuarios': 'Usuarios', '/perfil': 'Mi perfil' };
-
-function IndicadorSesion() {
-  const { inactividad } = useAuth();
-  return (
-    <div className="rounded-lg bg-white/[0.06] border border-white/10 px-3 py-2.5">
-      <p className="flex items-center gap-2 text-xs font-semibold text-white">
-        <span className="size-2 rounded-full bg-exito" />
-        Sesión activa
-      </p>
-      <p className="text-[11px] text-white/60 mt-1 leading-snug">
-        {inactividad.minutos > 0 ? `Se cierra tras ${inactividad.minutos} min sin actividad.` : 'Sin cierre por inactividad.'}
-      </p>
-    </div>
-  );
-}
 
 function MenuLateral({ onNueva }) {
   const { sesion, cerrarSesion } = useAuth();
@@ -89,9 +77,6 @@ function MenuLateral({ onNueva }) {
           </nav>
         </div>
       </div>
-      <div className="p-4">
-        <IndicadorSesion />
-      </div>
     </aside>
   );
 }
@@ -113,6 +98,7 @@ function BarraSuperior() {
       </nav>
       <p className="md:hidden font-titulo font-semibold text-texto">{TITULOS[pathname]}</p>
       <div className="ml-auto flex items-center gap-3">
+        <IndicadorServicios />
         <BotonTema />
         <Link to="/perfil" className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-borde-suave">
           <div className="hidden sm:block text-right leading-tight">
@@ -175,22 +161,87 @@ function BarraCelular({ onNueva }) {
   );
 }
 
+// Atajos de teclado (se apagan en Mi perfil > Preferencias). No se activan mientras se escribe en un campo.
+export const ATAJOS = [
+  { tecla: 'N', texto: 'Nueva reserva', roles: ROLES_QUE_RESERVAN },
+  { tecla: 'I', texto: 'Ir a Inicio', a: '/panel' },
+  { tecla: 'A', texto: 'Ir a la Agenda', a: '/agenda' },
+  { tecla: 'R', texto: 'Ir a Reservas', a: '/reservas' },
+  { tecla: 'U', texto: 'Ir a Usuarios', a: '/usuarios', roles: ['ADMINISTRADOR'] },
+  { tecla: 'P', texto: 'Ir a Mi perfil', a: '/perfil' },
+  { tecla: '?', texto: 'Ver esta lista de atajos' },
+];
+
+function useAtajos(abrir, setAyuda) {
+  const { sesion } = useAuth();
+  const navigate = useNavigate();
+  useEffect(() => {
+    function tecla(e) {
+      if (!preferencia('atajos') || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      const t = e.target;
+      if (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || document.querySelector('[role="dialog"]')) return;
+      const k = e.key === '?' ? '?' : e.key.toUpperCase();
+      const atajo = ATAJOS.find((x) => x.tecla === k && (!x.roles || x.roles.includes(sesion.rol)));
+      if (!atajo) return;
+      e.preventDefault();
+      if (k === '?') setAyuda(true);
+      else if (k === 'N') abrir();
+      else navigate(atajo.a);
+    }
+    document.addEventListener('keydown', tecla);
+    return () => document.removeEventListener('keydown', tecla);
+  }, [abrir, navigate, setAyuda, sesion.rol]);
+}
+
+function AyudaAtajos({ abierta, onCerrar }) {
+  const { sesion } = useAuth();
+  return (
+    <Modal abierto={abierta} onCerrar={onCerrar}>
+      <div className="p-6">
+        <h2 className="font-titulo text-lg font-semibold text-texto">Atajos de teclado</h2>
+        <p className="text-sm text-texto-2 mt-1 mb-4">Funcionan cuando no estás escribiendo en un campo. Se apagan en Mi perfil, Preferencias.</p>
+        <ul className="divide-y divide-borde-suave">
+          {ATAJOS.filter((x) => !x.roles || x.roles.includes(sesion.rol)).map((x) => (
+            <li key={x.tecla} className="flex items-center justify-between py-2 text-sm text-texto">
+              {x.texto}
+              <kbd className="min-w-7 h-7 px-2 grid place-items-center rounded-md border border-borde bg-lienzo font-mono text-xs font-semibold text-texto-2">{x.tecla}</kbd>
+            </li>
+          ))}
+        </ul>
+        <div className="flex justify-end mt-5">
+          <Boton variante="secundario" onClick={onCerrar}>
+            Cerrar
+          </Boton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export default function Shell({ children }) {
+  // Al cambiar de pantalla, el contenido entra con una animacion suave (key en <main>)
+  const { pathname } = useLocation();
   // version sube cada vez que se crea una reserva, para que las pantallas recarguen
   const [nueva, setNueva] = useState({ abierta: false, inicial: null, version: 0 });
-  const abrir = (inicial = null) => setNueva((n) => ({ ...n, abierta: true, inicial }));
+  const abrir = useCallback((inicial = null) => setNueva((n) => ({ ...n, abierta: true, inicial })), []);
   const valor = { abrir, version: nueva.version };
+  const [ayuda, setAyuda] = useState(false);
+  useAtajos(abrir, setAyuda);
 
   return (
     <ReservaContext.Provider value={valor}>
       <div className="min-h-screen bg-lienzo">
+        <BarraCarga />
         <MenuLateral onNueva={() => abrir()} />
         <div className="lg:pl-[260px] flex flex-col min-h-screen pb-16 lg:pb-0">
           <BarraSuperior />
-          <main className="flex-1 w-full max-w-[1440px] mx-auto px-4 md:px-8 py-6 md:py-8">{children}</main>
+          <main key={pathname} className="aparecer flex-1 w-full max-w-[1440px] mx-auto px-4 md:px-8 py-6 md:py-8">
+            {children}
+          </main>
           <PieInstitucional />
         </div>
         <BarraCelular onNueva={() => abrir()} />
+        <AyudaAtajos abierta={ayuda} onCerrar={() => setAyuda(false)} />
         <NuevaReserva
           abierta={nueva.abierta}
           inicial={nueva.inicial}

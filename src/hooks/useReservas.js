@@ -40,5 +40,5 @@ export default function useReservas(desde, hasta, { conLiberadas = false } = {})
       reservas = [...m.values()].sort((a, b) => (a.fecha + a.horaInicio).localeCompare(b.fecha + b.horaInicio));
     }
     return { ...cat, reservas };
-  }, [desde, hasta, conLiberadas, sesion.token]);
+  }, [desde, hasta, conLiberadas, sesion.token], `reservas|${sesion.usuarioId}|${desde}|${hasta}|${conLiberadas}`);
 }

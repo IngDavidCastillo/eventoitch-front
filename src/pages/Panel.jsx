@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNuevaReserva } from '../components/layout/Shell';
 import useReservas from '../hooks/useReservas';
 import useDatos from '../hooks/useDatos';
+import Contador from '../components/Contador';
 import useRecargaAlCrear from '../hooks/useRecargaAlCrear';
 import { listarUsuarios } from '../api/usuarios';
 import Icono from '../components/Icono';
@@ -22,7 +23,13 @@ function Kpi({ titulo, valor, detalle, chip, cargando }) {
         <p className="text-sm text-texto-2">{titulo}</p>
         {chip}
       </div>
-      {cargando ? <Esqueleto className="h-8 w-20 mt-3" /> : <p className="font-titulo text-[32px] font-semibold text-texto mt-2 tabular leading-tight">{valor}</p>}
+      {cargando ? (
+        <Esqueleto className="h-8 w-20 mt-3" />
+      ) : (
+        <p className="aparecer font-titulo text-[32px] font-semibold text-texto mt-2 tabular leading-tight">
+          <Contador valor={valor} />
+        </p>
+      )}
       <p className="text-xs text-texto-2 mt-1">{detalle}</p>
     </Tarjeta>
   );
@@ -120,7 +127,7 @@ function UltimasReservas({ reservas, espacios, eventos }) {
                 <th className="px-5 py-3 text-right">Creada</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="escalonado">
               {ultimas.map((r) => (
                 <tr key={r.id} className="border-b border-borde-suave last:border-0 hover:bg-lienzo">
                   <td className="px-5 py-3 font-mono text-xs text-texto-2 whitespace-nowrap">{folio(r)}</td>
@@ -224,21 +231,21 @@ export default function Panel() {
         </Tarjeta>
       ) : gestiona ? (
         <>
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="escalonado grid grid-cols-2 xl:grid-cols-4 gap-4">
             {esAdmin ? (
-              <Kpi titulo="Usuarios activos" valor={usuarios.datos?.length ?? '—'} detalle="Cuentas con estado ACTIVO" cargando={usuarios.cargando} />
+              <Kpi titulo="Usuarios activos" valor={usuarios.datos?.length ?? '—'} detalle="Cuentas con estado ACTIVO" cargando={usuarios.cargando && !usuarios.datos} />
             ) : (
-              <Kpi titulo="Espacios disponibles" valor={espaciosOk.length} detalle={`${enMantenimiento.length} en mantenimiento`} cargando={datos.cargando} />
+              <Kpi titulo="Espacios disponibles" valor={espaciosOk.length} detalle={`${enMantenimiento.length} en mantenimiento`} cargando={!d} />
             )}
-            <Kpi titulo="Reservas esta semana" valor={semana.length} detalle={`${totalHrs} horas apartadas`} cargando={datos.cargando} />
+            <Kpi titulo="Reservas esta semana" valor={semana.length} detalle={`${totalHrs} horas apartadas`} cargando={!d} />
             <Kpi
               titulo="Ocupación de espacios"
               valor={`${ocupacion}%`}
               detalle={`Promedio sobre ${HORAS_HABILES} hrs hábiles`}
-              cargando={datos.cargando}
+              cargando={!d}
               chip={ocupacion >= 70 && <span className="rounded-md border border-oro-borde bg-oro-tinte px-2 py-0.5 text-[11px] font-semibold text-oro-texto">Alta</span>}
             />
-            <Kpi titulo="Eventos esta semana" valor={eventosSemana} detalle="Con al menos una reserva" cargando={datos.cargando} />
+            <Kpi titulo="Eventos esta semana" valor={eventosSemana} detalle="Con al menos una reserva" cargando={!d} />
           </div>
 
           <div className="grid xl:grid-cols-3 gap-6 mt-6">
@@ -280,7 +287,7 @@ export default function Panel() {
             ) : proximas.length === 0 ? (
               <Vacio icono="event_busy" titulo="No hay actividades próximas">Cuando se reserve un espacio aparecerá aquí.</Vacio>
             ) : (
-              <ul className="px-5 pb-5 space-y-3">
+              <ul className="escalonado px-5 pb-5 space-y-3">
                 {proximas.map((r) => (
                   <li key={r.id} className="flex items-center gap-4 rounded-xl border border-borde p-4">
                     <div className="w-14 text-center rounded-lg border border-borde py-1.5">

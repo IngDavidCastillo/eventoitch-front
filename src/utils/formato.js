@@ -8,6 +8,10 @@ export const TIPOS = {
   INVITADO: 'Invitado',
 };
 
+// Minutos que ms-agenda deja libres entre reservas del mismo espacio (agenda.margen-minutos).
+// La revision de disponibilidad trae el valor real; este es el de respaldo para dibujar la agenda.
+export const MARGEN_MINUTOS = Number(import.meta.env.VITE_AGENDA_MARGEN_MINUTOS ?? 30);
+
 export const ROLES_QUE_RESERVAN = ['ORGANIZADOR', 'ADMINISTRADOR'];
 
 export function nombreTipo(tipo) {

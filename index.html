@@ -6,12 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EventoITCH</title>
     <meta name="color-scheme" content="light dark" />
-    <!-- Aplica el modo claro u oscuro antes de pintar (ver src/utils/tema.js) -->
+    <!-- Aplica el modo claro u oscuro y las preferencias antes de pintar (ver src/utils/tema.js y preferencias.js) -->
     <script>
       try {
         var t = localStorage.getItem('eventoitch-tema');
         if (t !== 'oscuro' && t !== 'claro') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'oscuro' : 'claro';
         document.documentElement.dataset.tema = t;
+        var p = JSON.parse(localStorage.getItem('eventoitch-preferencias') || '{}');
+        ['letra', 'movimiento', 'contraste', 'foco'].forEach(function (k) {
+          if (p[k]) document.documentElement.dataset[k] = p[k];
+        });
       } catch (e) {}
     </script>
     <!-- Fuentes del diseno de Stitch: Plus Jakarta Sans (titulos), Inter (texto), JetBrains Mono (folios) e iconos Material Symbols -->
