@@ -84,7 +84,8 @@ async function revisar() {
         // Primero se prueba la direccion que usa el front (.env.local); si no hay o no contesta, la que dio
         // el servicio a Eureka. (Eureka guarda la IP que tenia la PC al arrancar el micro: si cambias de red,
         // esa IP queda vieja hasta que reinicies el micro.)
-        let url = s.url || enEureka?.url || '';
+        // Los servicios de los companeros se buscan primero en Eureka (su IP cambia cuando cambian de red).
+        let url = (s.mio ? s.url || enEureka?.url : enEureka?.url || s.url) || '';
         let vivo = await responde(url);
         if (!vivo && enEureka?.url && enEureka.url !== url && (await responde(enEureka.url))) {
           url = enEureka.url;
@@ -152,3 +153,9 @@ export function servicioCaido(id) {
   return estado.servicios.some((s) => s.id === id && !s.vivo);
 }
 export const SEGUNDOS = CADA_MS / 1000;
+
+/** Direccion (http://ip:puerto) con la que el servicio esta registrado AHORA en Eureka, o null si no esta. */
+export async function urlEnEureka(id) {
+  const registro = await leerEureka();
+  return registro?.get(id)?.url ?? null;
+}
