@@ -21,6 +21,9 @@ function leerSesion() {
 }
 
 function guardar(sesion) {
+  // Se borra la sesion vieja del otro lado: si no, al recargar se leeria un token que ya no vale
+  // ("La sesion ya fue cerrada") porque leerSesion() mira primero localStorage.
+  (sesion.recordar ? sessionStorage : localStorage).removeItem(CLAVE);
   (sesion.recordar ? localStorage : sessionStorage).setItem(CLAVE, JSON.stringify(sesion));
 }
 
