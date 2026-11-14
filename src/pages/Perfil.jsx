@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { actualizarUsuario, quitarFoto, subirFoto } from '../api/usuarios';
-import { cambiarPassword } from '../api/auth';
+import { cambiarPassword, misAccesos } from '../api/auth';
 import { buscarMias, liberarReserva } from '../api/agenda';
 import { cargarCatalogos } from '../hooks/useReservas';
 import useDatos from '../hooks/useDatos';
@@ -18,7 +18,7 @@ import { hayCambios, restablecerPreferencias, usePreferencias } from '../utils/p
 import { listarEspacios } from '../api/catalogos';
 import { descargarIcs } from '../utils/calendario';
 import { ROLES_QUE_RESERVAN, documento, folio, nombreCompleto, nombreEspacio, nombreEvento, nombreTipo } from '../utils/formato';
-import { fechaCorta, horas, hoyIso, lunesDe, sumarDias } from '../utils/fechas';
+import { fechaCorta, haceCuanto, horas, hoyIso, lunesDe, sumarDias } from '../utils/fechas';
 import { TIPOS_FOTO, prepararFoto } from '../utils/imagen';
 
 // ---------- Tarjeta de presentacion ----------
@@ -546,7 +546,83 @@ function Seguridad() {
         </Tarjeta>
       </form>
 
+      <ActividadReciente />
     </div>
+  );
+}
+
+// ---------- Actividad reciente (GET /auth/accesos) ----------
+const RESULTADOS = {
+  EXITOSO: { texto: 'Inicio de sesión', tono: 'exito', icono: 'login' },
+  PASSWORD_INCORRECTA: { texto: 'Contraseña incorrecta', tono: 'aviso', icono: 'password' },
+  CUENTA_BLOQUEADA: { texto: 'Cuenta bloqueada', tono: 'peligro', icono: 'lock' },
+  CUENTA_INACTIVA: { texto: 'Cuenta inactiva', tono: 'neutro', icono: 'person_off' },
+};
+
+const fechaHora = new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+
+function ActividadReciente() {
+  const { sesion } = useAuth();
+  const datos = useDatos(() => misAccesos(sesion.token, 15), [sesion.token], `accesos|${sesion.usuarioId}`);
+  const accesos = datos.datos;
+  const fallidos = accesos?.filter((a) => a.resultado !== 'EXITOSO').length ?? 0;
+
+  return (
+    <Tarjeta className="p-6 mt-6">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <h2 className="font-titulo text-lg font-semibold text-texto">Actividad reciente</h2>
+          <p className="text-sm text-texto-2 mt-0.5">Los últimos intentos de entrar a tu cuenta. Si ves algo que no fuiste tú, cambia tu contraseña.</p>
+        </div>
+        <Boton variante="secundario" tamano="sm" icono="refresh" onClick={datos.recargar} cargando={datos.cargando && !!accesos}>
+          Actualizar
+        </Boton>
+      </div>
+
+      {fallidos > 0 && (
+        <Aviso tipo="aviso" className="mb-4">
+          Hay {fallidos} {fallidos === 1 ? 'intento fallido' : 'intentos fallidos'} en esta lista. Tras 5 seguidos, la cuenta se bloquea 15 minutos y te llega un correo.
+        </Aviso>
+      )}
+
+      {!accesos && datos.cargando && (
+        <div className="space-y-3">
+          {[0, 1, 2].map((n) => (
+            <Esqueleto key={n} className="h-12 w-full rounded-lg" style={{ animationDelay: `${n * 120}ms` }} />
+          ))}
+        </div>
+      )}
+      {!accesos && datos.error && (
+        <Aviso tipo="error">No se pudo cargar tu actividad: {datos.error.message}</Aviso>
+      )}
+      {accesos?.length === 0 && (
+        <Vacio icono="history" titulo="Sin actividad todavía">
+          Aquí aparecerán tus inicios de sesión.
+        </Vacio>
+      )}
+      {accesos?.length > 0 && (
+        <ul className="divide-y divide-borde-suave -mx-2">
+          {accesos.map((a, i) => {
+            const r = RESULTADOS[a.resultado] ?? { texto: a.resultado, tono: 'neutro', icono: 'help' };
+            return (
+              <li key={`${a.fecha}-${i}`} className="flex items-center gap-3 px-2 py-3">
+                <span className="size-9 shrink-0 rounded-full bg-borde-suave text-texto-2 grid place-items-center">
+                  <Icono nombre={r.icono} className="text-[18px]" />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-texto truncate">{a.dispositivo}</p>
+                  <p className="text-xs text-texto-2 truncate">
+                    {fechaHora.format(new Date(a.fecha))} · {haceCuanto(a.fecha)}
+                    {a.ip ? ` · IP ${a.ip}` : ''}
+                  </p>
+                </div>
+                <Insignia tono={r.tono}>{r.texto}</Insignia>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Tarjeta>
   );
 }
 

@@ -33,5 +33,11 @@ export function cambiarPassword(passwordActual, passwordNueva, token) {
   return pedir(`${BASE}/password`, { metodo: 'PUT', cuerpo: { passwordActual, passwordNueva }, token });
 }
 
+// GET /accesos -> [{ fecha, resultado, ip, navegador, dispositivo }], mas recientes primero (max. 50)
+// resultado: EXITOSO, PASSWORD_INCORRECTA, CUENTA_BLOQUEADA, CUENTA_INACTIVA
+export function misAccesos(token, limite = 20) {
+  return pedir(`${BASE}/accesos?limite=${limite}`, { token });
+}
+
 // El registro avisa si el correo de bienvenida no se pudo mandar (ms-notificaciones no conectado a Eureka)
 export const correoNoEnviado = (aviso) => /no fue enviado/i.test(aviso ?? '');
