@@ -8,6 +8,12 @@ export function login(username, password) {
   return pedir(`${BASE}/login`, { metodo: 'POST', cuerpo: { username, password } });
 }
 
+// POST /password/temporal (publico): cambia la contrasena temporal (la puso un ADMINISTRADOR) por una propia.
+// Responde igual que el login (token).
+export function cambiarPasswordTemporal(username, passwordActual, passwordNueva) {
+  return pedir(`${BASE}/password/temporal`, { metodo: 'POST', cuerpo: { username, passwordActual, passwordNueva } });
+}
+
 // POST /registro (publico, solo ESTUDIANTE o INVITADO) -> igual que login
 export function registro(datos) {
   return pedir(`${BASE}/registro`, { metodo: 'POST', cuerpo: datos });
@@ -46,3 +52,14 @@ export function misAccesos(token, limite = 20) {
 
 // El registro avisa si el correo de bienvenida no se pudo mandar (ms-notificaciones no conectado a Eureka)
 export const correoNoEnviado = (aviso) => /no fue enviado/i.test(aviso ?? '');
+
+// POST /admin/usuarios/{id}/password/enlace (ADMINISTRADOR): le manda a esa cuenta un enlace por correo para
+// poner su contrasena. 202, o 503 si ms-notificaciones no respondio (entonces se le pone una temporal).
+export function enviarEnlaceRestablecer(usuarioId, token) {
+  return pedir(`${BASE}/admin/usuarios/${usuarioId}/password/enlace`, { metodo: 'POST', token });
+}
+
+// POST /password/restablecer (publico, con el token del enlace del correo) -> 204, o 400 si el enlace no sirve
+export function restablecerConEnlace(token, passwordNueva) {
+  return pedir(`${BASE}/password/restablecer`, { metodo: 'POST', cuerpo: { token, passwordNueva } });
+}

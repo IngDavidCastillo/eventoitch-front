@@ -4,13 +4,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import useDatos from '../hooks/useDatos';
 import { cambiarEstado, listarUsuarios, subirFoto } from '../api/usuarios';
-import { correoNoEnviado, registroAdmin, restablecerPassword } from '../api/auth';
+import { correoNoEnviado, enviarEnlaceRestablecer, registroAdmin, restablecerPassword } from '../api/auth';
 import Icono from '../components/Icono';
 import { Aviso, Avatar, Boton, SelectorFoto, Campo, Entrada, Estado, ErrorServicio, EsqueletoTabla, Modal, Panel, Pestanas, Selector, Tarjeta, TituloPagina, Vacio } from '../components/ui';
 import { TIPOS, documento, nombreCompleto, nombreTipo, telefono } from '../utils/formato';
 
 const CON_RFC = ['DOCENTE', 'ADMINISTRADOR', 'ORGANIZADOR'];
-const VACIO = { tipoUsuario: 'DOCENTE', nombre: '', apellidos: '', numeroControl: '', rfc: '', email: '', telefono: '', password: '' };
+const VACIO = { tipoUsuario: 'DOCENTE', nombre: '', apellidos: '', numeroControl: '', rfc: '', email: '', telefono: '' };
 
 function NuevoUsuario({ abierto, onCerrar, onCreado }) {
   const { sesion } = useAuth();
@@ -34,7 +34,6 @@ function NuevoUsuario({ abierto, onCerrar, onCreado }) {
     if (form.tipoUsuario === 'ESTUDIANTE' && !form.numeroControl.trim()) x.numeroControl = 'El estudiante necesita número de control';
     if (conRfc && !form.rfc.trim()) x.rfc = 'Este tipo necesita RFC';
     if (form.telefono && !/^[0-9]{10,15}$/.test(form.telefono)) x.telefono = 'Solo números, de 10 a 15 dígitos';
-    if (form.password.length < 8) x.password = 'Mínimo 8 caracteres';
     setErrores(x);
     if (Object.keys(x).length) return;
 
@@ -50,7 +49,8 @@ function NuevoUsuario({ abierto, onCerrar, onCreado }) {
           rfc: conRfc ? form.rfc.trim().toUpperCase() : null,
           email: form.email.trim(),
           telefono: form.telefono || null,
-          password: form.password,
+          // Sin contrasena: ms-autenticacion genera una temporal y la manda por correo con el usuario
+          password: null,
         },
         sesion.token,
       );
@@ -65,7 +65,7 @@ function NuevoUsuario({ abierto, onCerrar, onCreado }) {
       }
       setForm(VACIO);
       setFoto(null);
-      onCreado(form, r?.avisoCorreo, avisoFoto);
+      onCreado(form, r, avisoFoto);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -136,9 +136,6 @@ function NuevoUsuario({ abierto, onCerrar, onCreado }) {
         <Campo etiqueta="Teléfono" error={errores.telefono} ayuda="Opcional, 10 dígitos.">
           <Entrada icono="call" name="telefono" inputMode="numeric" value={form.telefono} onChange={cambiar} error={errores.telefono} />
         </Campo>
-        <Campo etiqueta="Contraseña inicial" obligatorio error={errores.password} ayuda="Mínimo 8 caracteres.">
-          <Entrada icono="lock" name="password" type="password" autoComplete="new-password" value={form.password} onChange={cambiar} error={errores.password} />
-        </Campo>
       </div>
       {usuario && (
         <div className="mt-5 rounded-lg bg-oro-tinte border border-oro-borde px-4 py-3 text-sm">
@@ -146,6 +143,10 @@ function NuevoUsuario({ abierto, onCerrar, onCreado }) {
           <p className="font-mono text-texto mt-0.5">{usuario}</p>
         </div>
       )}
+      <p className="mt-4 flex gap-2 text-sm text-texto-2">
+        <Icono nombre="mail_lock" className="text-[18px] text-marino" />
+        <span>El sistema genera una contraseña temporal y se la manda por correo junto con su usuario. Al entrar por primera vez tendrá que cambiarla.</span>
+      </p>
     </Panel>
   );
 }
@@ -161,8 +162,12 @@ function claveTemporal() {
   return c;
 }
 
-function RestablecerPassword({ usuario, onCerrar, onListo }) {
+// Primero se intenta mandar un enlace por correo (POST .../password/enlace) para que la persona ponga la suya.
+// Si el correo no sale (503) o el administrador lo prefiere, se le pone una contrasena temporal (PUT .../password).
+function RestablecerPassword({ usuario, onCerrar, onListo, onEnlace }) {
   const { sesion } = useAuth();
+  const [modo, setModo] = useState('enlace'); // 'enlace' | 'temporal'
+  const [sinCorreo, setSinCorreo] = useState(null);
   const [clave, setClave] = useState('');
   const [ver, setVer] = useState(true);
   const [error, setError] = useState(null);
@@ -170,10 +175,30 @@ function RestablecerPassword({ usuario, onCerrar, onListo }) {
 
   useEffect(() => {
     if (usuario) {
+      setModo('enlace');
+      setSinCorreo(null);
       setClave(claveTemporal());
       setError(null);
     }
   }, [usuario]);
+
+  async function mandarEnlace() {
+    setGuardando(true);
+    setError(null);
+    try {
+      await enviarEnlaceRestablecer(usuario.id, sesion.token);
+      onEnlace(usuario);
+    } catch (err) {
+      if (err.status === 503) {
+        setSinCorreo(err.message);
+        setModo('temporal');
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setGuardando(false);
+    }
+  }
 
   async function guardar() {
     if (clave.length < 8) {
@@ -200,8 +225,39 @@ function RestablecerPassword({ usuario, onCerrar, onListo }) {
             <Icono nombre="key" className="text-[24px]" />
           </span>
           <h2 className="font-titulo text-lg font-semibold text-texto">Restablecer la contraseña de {nombreCompleto(usuario)}</h2>
+          {modo === 'enlace' ? (
+            <>
+              <p className="text-sm text-texto-2 mt-1 mb-5">
+                Le llegará un correo con un enlace para que ponga una contraseña suya (vence en 15 minutos y sirve una sola vez). Mientras no lo use, su contraseña actual sigue igual.
+              </p>
+              {error && (
+                <Aviso tipo="error" className="mb-4">
+                  {error}
+                </Aviso>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-2 mt-6">
+                <button type="button" onClick={() => setModo('temporal')} className="text-xs font-medium text-marino hover:underline" disabled={guardando}>
+                  Mejor ponerle una contraseña temporal
+                </button>
+                <div className="flex gap-2">
+                  <Boton variante="secundario" onClick={onCerrar} disabled={guardando}>
+                    Cancelar
+                  </Boton>
+                  <Boton icono="forward_to_inbox" cargando={guardando} onClick={mandarEnlace}>
+                    Enviar enlace
+                  </Boton>
+                </div>
+              </div>
+            </>
+          ) : (
+          <>
+          {sinCorreo && (
+            <Aviso tipo="aviso" titulo="No se pudo mandar el correo" className="mt-3">
+              {sinCorreo}
+            </Aviso>
+          )}
           <p className="text-sm text-texto-2 mt-1 mb-5">
-            Se cerrará la sesión que tenga abierta, se le quitará el bloqueo por intentos fallidos y le llegará un correo de aviso. Dale la contraseña en persona y pídele que la cambie en Mi perfil › Seguridad.
+            Se cerrará la sesión que tenga abierta, se le quitará el bloqueo por intentos fallidos y le llegará un correo de aviso. Es una contraseña temporal: dásela en persona y, al iniciar sesión, el sistema le pedirá poner una suya antes de entrar.
           </p>
           <Campo etiqueta="Contraseña nueva" obligatorio error={error}>
             <Entrada
@@ -229,6 +285,8 @@ function RestablecerPassword({ usuario, onCerrar, onListo }) {
               Restablecer
             </Boton>
           </div>
+          </>
+          )}
         </div>
       )}
     </Modal>
@@ -383,11 +441,18 @@ export default function Usuarios() {
       <NuevoUsuario
         abierto={nuevo}
         onCerrar={() => setNuevo(false)}
-        onCreado={(f, avisoCorreo, avisoFoto) => {
+        onCreado={(f, r, avisoFoto) => {
           setNuevo(false);
+          const avisoCorreo = r?.avisoCorreo;
+          // Correo con usuario y contrasena temporal; si no salio, el administrador se la da en persona
+          const credenciales = r?.credencialesEnviadas
+            ? 'Le enviamos por correo su usuario y una contraseña temporal.'
+            : r?.passwordTemporal
+              ? `No se pudo mandar el correo con sus datos: dale en persona su contraseña temporal ${r.passwordTemporal} (al entrar tendrá que cambiarla).`
+              : null;
           setMensaje({
-            tipo: avisoFoto || correoNoEnviado(avisoCorreo) ? 'aviso' : 'exito',
-            texto: [`Se creó la cuenta de ${f.nombre} ${f.apellidos}.`, avisoCorreo && `${avisoCorreo}.`, avisoFoto].filter(Boolean).join(' '),
+            tipo: avisoFoto || correoNoEnviado(avisoCorreo) || r?.credencialesEnviadas === false ? 'aviso' : 'exito',
+            texto: [`Se creó la cuenta de ${f.nombre} ${f.apellidos}.`, credenciales, avisoCorreo && `${avisoCorreo}.`, avisoFoto].filter(Boolean).join(' '),
           });
           datos.recargar();
         }}
@@ -398,7 +463,11 @@ export default function Usuarios() {
         onCerrar={() => setRestablecer(null)}
         onListo={(u, clave) => {
           setRestablecer(null);
-          setMensaje({ tipo: 'exito', texto: `Se restableció la contraseña de ${nombreCompleto(u)}. La nueva es ${clave}; dásela en persona. Su sesión abierta se cerró.` });
+          setMensaje({ tipo: 'exito', texto: `Se restableció la contraseña de ${nombreCompleto(u)}. La temporal es ${clave}; dásela en persona. Al entrar tendrá que cambiarla. Su sesión abierta se cerró.` });
+        }}
+        onEnlace={(u) => {
+          setRestablecer(null);
+          setMensaje({ tipo: 'exito', texto: `Le enviamos a ${nombreCompleto(u)} un enlace por correo para que ponga su contraseña (vence en 15 minutos).` });
         }}
       />
 

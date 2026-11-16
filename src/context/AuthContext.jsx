@@ -42,8 +42,18 @@ export function AuthProvider({ children }) {
     setPerfil(null);
   }, []);
 
+  // Si la contrasena es temporal (la restablecio un ADMINISTRADOR), el backend responde 202
+  // { requiereCambioPassword } sin token: se devuelve eso a la pantalla de login para que pida la nueva.
   async function iniciarSesion(username, password, recordar) {
     const r = await authApi.login(username, password);
+    if (r?.requiereCambioPassword) return r;
+    abrir(r, recordar);
+    return null;
+  }
+
+  // Cambia la contrasena temporal por una propia; el backend responde el token y se abre la sesion
+  async function cambiarPasswordTemporal(username, temporal, nueva, recordar) {
+    const r = await authApi.cambiarPasswordTemporal(username, temporal, nueva);
     abrir(r, recordar);
   }
 
@@ -133,6 +143,7 @@ export function AuthProvider({ children }) {
         setPerfil,
         recargarPerfil,
         iniciarSesion,
+        cambiarPasswordTemporal,
         registrarse,
         cerrarSesion,
         olvidarSesion,
