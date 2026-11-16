@@ -492,6 +492,7 @@ function Seguridad() {
     const x = {};
     if (!form.actual) x.actual = 'Obligatoria';
     if (form.nueva.length < 8) x.nueva = 'Mínimo 8 caracteres';
+    else if (!/[a-zA-ZáéíóúñÁÉÍÓÚÑ]/.test(form.nueva) || !/\d/.test(form.nueva)) x.nueva = 'Usa al menos una letra y un número';
     if (form.nueva && form.nueva === form.actual) x.nueva = 'Debe ser distinta a la actual';
     if (form.confirmar !== form.nueva) x.confirmar = 'Las contraseñas no coinciden';
     setErrores(x);
@@ -520,7 +521,7 @@ function Seguridad() {
       <form onSubmit={guardar}>
         <Tarjeta className="p-6">
           <h2 className="font-titulo text-lg font-semibold text-texto">Cambiar contraseña</h2>
-          <p className="text-sm text-texto-2 mt-0.5 mb-5">Usa al menos 8 caracteres; mientras más variada, mejor.</p>
+          <p className="text-sm text-texto-2 mt-0.5 mb-5">Al menos 8 caracteres, con letras y números. No uses tu usuario ni contraseñas comunes como 12345678.</p>
           {mensaje && (
             <Aviso tipo={mensaje.tipo} onCerrar={() => setMensaje(null)} className="mb-5">
               {mensaje.texto}
