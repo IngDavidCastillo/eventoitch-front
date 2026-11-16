@@ -223,3 +223,17 @@ html.tema-transicion, html.tema-transicion * {
 
 :where(a, button, summary, [role="switch"], [tabindex]):focus-visible { outline: 2px solid var(--color-info); outline-offset: 2px; }
 input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:focus, textarea:focus-visible { outline: none !important; }
+
+/* Autocompletado del navegador (Chrome/Edge): cuando el navegador rellena usuario y contrasena guardados,
+   les pone su propio fondo azul claro. Aqui se tapa con el color de la tarjeta (claro u oscuro, segun el tema)
+   y el texto queda del color normal. Es un truco conocido: un "box-shadow" interno grande encima del fondo. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px var(--color-superficie) inset !important;
+  box-shadow: 0 0 0 1000px var(--color-superficie) inset !important;
+  -webkit-text-fill-color: var(--color-texto) !important;
+  caret-color: var(--color-texto);
+  transition: background-color 99999s ease-out 0s;
+}
