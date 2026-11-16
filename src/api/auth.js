@@ -33,6 +33,11 @@ export function cambiarPassword(passwordActual, passwordNueva, token) {
   return pedir(`${BASE}/password`, { metodo: 'PUT', cuerpo: { passwordActual, passwordNueva }, token });
 }
 
+// PUT /admin/usuarios/{usuarioId}/password (ADMINISTRADOR) -> 204. Cierra la sesion de esa cuenta y le quita el bloqueo.
+export function restablecerPassword(usuarioId, passwordNueva, token) {
+  return pedir(`${BASE}/admin/usuarios/${usuarioId}/password`, { metodo: 'PUT', cuerpo: { passwordNueva }, token });
+}
+
 // GET /accesos -> [{ fecha, resultado, ip, navegador, dispositivo }], mas recientes primero (max. 50)
 // resultado: EXITOSO, PASSWORD_INCORRECTA, CUENTA_BLOQUEADA, CUENTA_INACTIVA
 export function misAccesos(token, limite = 20) {
