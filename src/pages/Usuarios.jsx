@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import useDatos from '../hooks/useDatos';
 import { cambiarEstado, listarUsuarios, subirFoto } from '../api/usuarios';
-import { correoNoEnviado, registroAdmin } from '../api/auth';
+import { correoNoEnviado, registroAdmin, restablecerPassword } from '../api/auth';
 import Icono from '../components/Icono';
 import { Aviso, Avatar, Boton, SelectorFoto, Campo, Entrada, Estado, ErrorServicio, EsqueletoTabla, Modal, Panel, Pestanas, Selector, Tarjeta, TituloPagina, Vacio } from '../components/ui';
 import { TIPOS, documento, nombreCompleto, nombreTipo, telefono } from '../utils/formato';
@@ -150,6 +150,91 @@ function NuevoUsuario({ abierto, onCerrar, onCreado }) {
   );
 }
 
+// ---------- Restablecer contrasena (PUT /auth/admin/usuarios/{id}/password) ----------
+// Una contrasena temporal facil de dictar: 4 letras + 4 numeros (8 caracteres, el minimo de la API)
+function claveTemporal() {
+  const letras = 'ABCDEFGHJKMNPQRSTUVWXYZ';
+  const azar = (n) => crypto.getRandomValues(new Uint32Array(1))[0] % n;
+  let c = '';
+  for (let i = 0; i < 4; i++) c += letras[azar(letras.length)];
+  for (let i = 0; i < 4; i++) c += azar(10);
+  return c;
+}
+
+function RestablecerPassword({ usuario, onCerrar, onListo }) {
+  const { sesion } = useAuth();
+  const [clave, setClave] = useState('');
+  const [ver, setVer] = useState(true);
+  const [error, setError] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    if (usuario) {
+      setClave(claveTemporal());
+      setError(null);
+    }
+  }, [usuario]);
+
+  async function guardar() {
+    if (clave.length < 8) {
+      setError('Mínimo 8 caracteres');
+      return;
+    }
+    setGuardando(true);
+    setError(null);
+    try {
+      await restablecerPassword(usuario.id, clave, sesion.token);
+      onListo(usuario, clave);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <Modal abierto={!!usuario} onCerrar={() => !guardando && onCerrar()}>
+      {usuario && (
+        <div className="p-6">
+          <span className="size-12 rounded-full grid place-items-center mb-4 bg-aviso-tinte text-aviso-texto">
+            <Icono nombre="key" className="text-[24px]" />
+          </span>
+          <h2 className="font-titulo text-lg font-semibold text-texto">Restablecer la contraseña de {nombreCompleto(usuario)}</h2>
+          <p className="text-sm text-texto-2 mt-1 mb-5">
+            Se cerrará la sesión que tenga abierta, se le quitará el bloqueo por intentos fallidos y le llegará un correo de aviso. Dale la contraseña en persona y pídele que la cambie en Mi perfil › Seguridad.
+          </p>
+          <Campo etiqueta="Contraseña nueva" obligatorio error={error}>
+            <Entrada
+              icono="lock_reset"
+              type={ver ? 'text' : 'password'}
+              value={clave}
+              onChange={(e) => setClave(e.target.value)}
+              error={error}
+              className="font-mono"
+              derecha={
+                <button type="button" onClick={() => setVer((v) => !v)} aria-label={ver ? 'Ocultar' : 'Mostrar'} className="text-tenue hover:text-texto-2">
+                  <Icono nombre={ver ? 'visibility_off' : 'visibility'} className="text-[18px]" />
+                </button>
+              }
+            />
+          </Campo>
+          <button type="button" onClick={() => setClave(claveTemporal())} className="mt-2 text-xs font-medium text-marino hover:underline">
+            Generar otra
+          </button>
+          <div className="flex justify-end gap-2 mt-6">
+            <Boton variante="secundario" onClick={onCerrar} disabled={guardando}>
+              Cancelar
+            </Boton>
+            <Boton icono="key" cargando={guardando} onClick={guardar}>
+              Restablecer
+            </Boton>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 export default function Usuarios() {
   const { sesion } = useAuth();
   const datos = useDatos(() => listarUsuarios({}, sesion.token), [sesion.token]);
@@ -160,6 +245,7 @@ export default function Usuarios() {
   const [confirmar, setConfirmar] = useState(null);
   const [trabajando, setTrabajando] = useState(false);
   const [mensaje, setMensaje] = useState(null);
+  const [restablecer, setRestablecer] = useState(null);
 
   const todos = useMemo(() => datos.datos ?? [], [datos.datos]);
   const cuentas = useMemo(() => {
@@ -275,9 +361,14 @@ export default function Usuarios() {
                       </td>
                       <td className="px-5 py-3 text-right">
                         {!yo && (
-                          <Boton variante={u.estado === 'ACTIVO' ? 'fantasma' : 'secundario'} tamano="sm" icono={u.estado === 'ACTIVO' ? 'person_off' : 'person_check'} onClick={() => setConfirmar(u)}>
-                            {u.estado === 'ACTIVO' ? 'Desactivar' : 'Activar'}
-                          </Boton>
+                          <div className="flex justify-end gap-1">
+                            <Boton variante="fantasma" tamano="sm" icono="key" onClick={() => setRestablecer(u)} title="Restablecer contraseña">
+                              Contraseña
+                            </Boton>
+                            <Boton variante={u.estado === 'ACTIVO' ? 'fantasma' : 'secundario'} tamano="sm" icono={u.estado === 'ACTIVO' ? 'person_off' : 'person_check'} onClick={() => setConfirmar(u)}>
+                              {u.estado === 'ACTIVO' ? 'Desactivar' : 'Activar'}
+                            </Boton>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -299,6 +390,15 @@ export default function Usuarios() {
             texto: [`Se creó la cuenta de ${f.nombre} ${f.apellidos}.`, avisoCorreo && `${avisoCorreo}.`, avisoFoto].filter(Boolean).join(' '),
           });
           datos.recargar();
+        }}
+      />
+
+      <RestablecerPassword
+        usuario={restablecer}
+        onCerrar={() => setRestablecer(null)}
+        onListo={(u, clave) => {
+          setRestablecer(null);
+          setMensaje({ tipo: 'exito', texto: `Se restableció la contraseña de ${nombreCompleto(u)}. La nueva es ${clave}; dásela en persona. Su sesión abierta se cerró.` });
         }}
       />
 
