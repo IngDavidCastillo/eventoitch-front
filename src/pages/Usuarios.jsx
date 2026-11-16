@@ -201,7 +201,7 @@ function RestablecerPassword({ usuario, onCerrar, onListo }) {
           </span>
           <h2 className="font-titulo text-lg font-semibold text-texto">Restablecer la contraseña de {nombreCompleto(usuario)}</h2>
           <p className="text-sm text-texto-2 mt-1 mb-5">
-            Se cerrará la sesión que tenga abierta, se le quitará el bloqueo por intentos fallidos y le llegará un correo de aviso. Dale la contraseña en persona y pídele que la cambie en Mi perfil › Seguridad.
+            Se cerrará la sesión que tenga abierta, se le quitará el bloqueo por intentos fallidos y le llegará un correo de aviso. Es una contraseña temporal: dásela en persona y, al iniciar sesión, el sistema le pedirá poner una suya antes de entrar.
           </p>
           <Campo etiqueta="Contraseña nueva" obligatorio error={error}>
             <Entrada
@@ -398,7 +398,7 @@ export default function Usuarios() {
         onCerrar={() => setRestablecer(null)}
         onListo={(u, clave) => {
           setRestablecer(null);
-          setMensaje({ tipo: 'exito', texto: `Se restableció la contraseña de ${nombreCompleto(u)}. La nueva es ${clave}; dásela en persona. Su sesión abierta se cerró.` });
+          setMensaje({ tipo: 'exito', texto: `Se restableció la contraseña de ${nombreCompleto(u)}. La temporal es ${clave}; dásela en persona. Al entrar tendrá que cambiarla. Su sesión abierta se cerró.` });
         }}
       />
 

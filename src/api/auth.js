@@ -8,6 +8,12 @@ export function login(username, password) {
   return pedir(`${BASE}/login`, { metodo: 'POST', cuerpo: { username, password } });
 }
 
+// POST /password/temporal (publico): cambia la contrasena temporal (la puso un ADMINISTRADOR) por una propia.
+// Responde igual que el login (token).
+export function cambiarPasswordTemporal(username, passwordActual, passwordNueva) {
+  return pedir(`${BASE}/password/temporal`, { metodo: 'POST', cuerpo: { username, passwordActual, passwordNueva } });
+}
+
 // POST /registro (publico, solo ESTUDIANTE o INVITADO) -> igual que login
 export function registro(datos) {
   return pedir(`${BASE}/registro`, { metodo: 'POST', cuerpo: datos });
