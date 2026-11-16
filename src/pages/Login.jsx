@@ -9,8 +9,81 @@ import Marca from '../components/layout/Marca';
 import BotonTema from '../components/BotonTema';
 import LadoInstitucional from './LadoInstitucional';
 
+// Contrasena temporal (la restablecio un ADMINISTRADOR): hay que poner una propia antes de entrar.
+// Se manda la temporal (la que se acaba de escribir) y la nueva a POST /auth/password/temporal, que da el token.
+function PasoCambio({ aviso, username, temporal, recordar, onListo, onCancelar }) {
+  const { cambiarPasswordTemporal } = useAuth();
+  const [form, setForm] = useState({ nueva: '', repetir: '' });
+  const [ver, setVer] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState(null);
+
+  const cambiar = (e) => {
+    setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+    setError(null);
+  };
+
+  async function enviar(e) {
+    e.preventDefault();
+    if (form.nueva.length < 8 || form.nueva.length > 72) return setError('Debe tener de 8 a 72 caracteres');
+    if (!/[a-zA-ZáéíóúñÁÉÍÓÚÑ]/.test(form.nueva) || !/\d/.test(form.nueva)) return setError('Usa al menos una letra y un número');
+    if (form.nueva === temporal) return setError('Debe ser distinta a la contraseña temporal');
+    if (form.nueva !== form.repetir) return setError('Las contraseñas no coinciden');
+    setEnviando(true);
+    setError(null);
+    try {
+      await cambiarPasswordTemporal(username, temporal, form.nueva, recordar);
+      onListo();
+    } catch (err) {
+      // 401/429: la temporal ya no sirve o la cuenta se bloqueo; hay que volver a iniciar sesion
+      if (err.status === 401 || err.status === 429) onCancelar(err.message);
+      else setError(err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  const tipo = ver ? 'text' : 'password';
+  return (
+    <form onSubmit={enviar} className="mt-8 space-y-5" noValidate>
+      <Aviso tipo="aviso" titulo="Cambia tu contraseña temporal">
+        {aviso ?? 'Un administrador restableció tu contraseña. Pon una nueva para entrar.'}
+      </Aviso>
+      <input type="text" name="username" value={username} autoComplete="username" readOnly hidden />
+      <Campo etiqueta="Contraseña nueva" ayuda="De 8 a 72 caracteres, con letras y números" error={error}>
+        <Entrada
+          icono="lock"
+          name="nueva"
+          type={tipo}
+          value={form.nueva}
+          onChange={cambiar}
+          autoComplete="new-password"
+          error={error}
+          autoFocus
+          derecha={
+            <button type="button" onClick={() => setVer((v) => !v)} aria-label={ver ? 'Ocultar contraseña' : 'Ver contraseña'} className="text-texto-2 hover:text-texto">
+              <Icono nombre={ver ? 'visibility_off' : 'visibility'} className="text-[20px]" />
+            </button>
+          }
+        />
+      </Campo>
+      <Campo etiqueta="Repite la contraseña nueva">
+        <Entrada icono="lock" name="repetir" type={tipo} value={form.repetir} onChange={cambiar} autoComplete="new-password" />
+      </Campo>
+      <Boton type="submit" tamano="lg" cargando={enviando} className="w-full">
+        {enviando ? 'Guardando...' : 'Guardar y entrar'}
+      </Boton>
+      <button type="button" onClick={() => onCancelar(null)} className="w-full text-sm text-texto-2 hover:text-texto">
+        Usar otra cuenta
+      </button>
+    </form>
+  );
+}
+
 export default function Login() {
   const { sesion, iniciarSesion, cierre, setCierre } = useAuth();
+  // Contrasena temporal: el backend pide cambiarla antes de dar el token (respuesta 202)
+  const [cambio, setCambio] = useState(null);
   const navigate = useNavigate();
   const { state } = useLocation();
   const [form, setForm] = useState({ username: '', password: '', recordar: true });
@@ -37,7 +110,11 @@ export default function Login() {
     setEnviando(true);
     setError(null);
     try {
-      await iniciarSesion(form.username.trim(), form.password, form.recordar);
+      const pendiente = await iniciarSesion(form.username.trim(), form.password, form.recordar);
+      if (pendiente) {
+        setCambio(pendiente);
+        return;
+      }
       setCierre(null);
       navigate(preferencia('inicio'), { replace: true });
     } catch (err) {
@@ -94,6 +171,23 @@ export default function Login() {
             </Aviso>
           )}
 
+          {cambio ? (
+            <PasoCambio
+              aviso={cambio.message}
+              username={form.username.trim()}
+              temporal={form.password}
+              recordar={form.recordar}
+              onListo={() => {
+                setCierre(null);
+                navigate(preferencia('inicio'), { replace: true });
+              }}
+              onCancelar={(motivo) => {
+                setCambio(null);
+                setForm((f) => ({ ...f, password: '' }));
+                if (motivo) setError({ titulo: 'Inicia sesión de nuevo', texto: motivo });
+              }}
+            />
+          ) : (
           <form onSubmit={enviar} className="mt-8 space-y-5" noValidate>
             <Campo etiqueta="Usuario" ayuda="Número de control, RFC o correo" error={errores.username}>
               <Entrada icono="person" name="username" value={form.username} onChange={cambiar} autoComplete="username" placeholder="20520145" error={errores.username} autoFocus />
@@ -123,6 +217,7 @@ export default function Login() {
               {enviando ? 'Verificando...' : 'Iniciar sesión'}
             </Boton>
           </form>
+          )}
 
           <div className="mt-8 pt-6 border-t border-borde text-center text-sm text-texto-2">
             ¿Aún no tienes cuenta?{' '}
