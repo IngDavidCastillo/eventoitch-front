@@ -1,0 +1,44 @@
+# Dependabot: revisa cada lunes si hay versiones nuevas de las dependencias y abre un PR hacia develop.
+# Solo versiones menores y parches (los saltos de version mayor, como React 19 -> 20, se hacen a mano).
+# Las alertas de seguridad (Dependabot security updates) se activan en GitHub: Settings > Code security.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "America/Mexico_City"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "fix"
+      include: "scope"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      # React y Vite en su propio PR; lo demas junto
+      react-vite:
+        patterns:
+          - "react*"
+          - "@vitejs/*"
+          - "vite"
+      demas:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "react*"
+          - "@vitejs/*"
+          - "vite"
+
+  # Las acciones de GitHub que usa el workflow de pruebas (checkout, setup-node...)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "fix"
+      include: "scope"
