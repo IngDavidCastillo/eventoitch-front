@@ -1,6 +1,7 @@
 // Panel azul con cuadricula de la izquierda en Login y Registro
 import Icono from '../components/Icono';
 import Marca from '../components/layout/Marca';
+import EscudoITCH from '../components/layout/EscudoITCH';
 
 export default function LadoInstitucional({ chip, titulo, texto, puntos, pie }) {
   return (
@@ -9,6 +10,7 @@ export default function LadoInstitucional({ chip, titulo, texto, puntos, pie }) 
       <div className="flex items-center gap-3">
         <Marca claro />
         <span className="rounded-md border border-oro-borde/70 bg-oro-tinte px-2 py-0.5 text-[11px] font-semibold tracking-wide text-marino">CAMPUS CHILPANCINGO</span>
+        <EscudoITCH claro className="size-14 ml-auto opacity-90" />
       </div>
       <div className="max-w-xl">
         <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-marino-osc px-3 py-1 text-xs text-oro-claro">

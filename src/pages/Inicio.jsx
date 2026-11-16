@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Icono from '../components/Icono';
 import Marca from '../components/layout/Marca';
+import EscudoITCH from '../components/layout/EscudoITCH';
 import BotonTema from '../components/BotonTema';
 
 const ESPACIOS = [
@@ -150,7 +151,10 @@ export default function Inicio() {
         <div className="max-w-6xl mx-auto px-4 md:px-6 py-12 grid md:grid-cols-3 gap-8">
           <div>
             <Marca claro />
-            <p className="text-sm text-white/65 mt-4 leading-relaxed">Instituto Tecnológico de Chilpancingo · Tecnológico Nacional de México. Chilpancingo de los Bravo, Guerrero.</p>
+            <div className="flex items-center gap-3 mt-5">
+              <EscudoITCH claro className="size-14" />
+              <p className="text-sm text-white/65 leading-relaxed">Instituto Tecnológico de Chilpancingo · Tecnológico Nacional de México. Chilpancingo de los Bravo, Guerrero.</p>
+            </div>
           </div>
           <div>
             <p className="etiqueta text-oro-claro">Navegación</p>
