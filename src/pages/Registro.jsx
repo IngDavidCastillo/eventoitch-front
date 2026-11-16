@@ -100,6 +100,7 @@ export default function Registro() {
   function validarSeguridad() {
     const x = {};
     if (form.password.length < 8) x.password = 'Mínimo 8 caracteres';
+    else if (!/[a-zA-ZáéíóúñÁÉÍÓÚÑ]/.test(form.password) || !/\d/.test(form.password)) x.password = 'Usa al menos una letra y un número';
     if (form.confirmar !== form.password) x.confirmar = 'Las contraseñas no coinciden';
     if (!form.acepto) x.acepto = 'Necesitas aceptar para continuar';
     setErrores(x);
