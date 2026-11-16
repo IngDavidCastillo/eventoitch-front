@@ -7,6 +7,7 @@ import Shell from './components/layout/Shell';
 import Inicio from './pages/Inicio';
 import Login from './pages/Login';
 import Registro from './pages/Registro';
+import Restablecer from './pages/Restablecer';
 import Panel from './pages/Panel';
 import Agenda from './pages/Agenda';
 import Reservas from './pages/Reservas';
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="/" element={<Inicio />} />
         <Route path="/login" element={<Login />} />
         <Route path="/registro" element={<Registro />} />
+        <Route path="/restablecer" element={<Restablecer />} />
         <Route path="/panel" element={privada(<Panel />)} />
         <Route path="/dashboard" element={privada(<Panel />)} />
         <Route path="/agenda" element={privada(<Agenda />)} />

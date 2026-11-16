@@ -52,3 +52,14 @@ export function misAccesos(token, limite = 20) {
 
 // El registro avisa si el correo de bienvenida no se pudo mandar (ms-notificaciones no conectado a Eureka)
 export const correoNoEnviado = (aviso) => /no fue enviado/i.test(aviso ?? '');
+
+// POST /admin/usuarios/{id}/password/enlace (ADMINISTRADOR): le manda a esa cuenta un enlace por correo para
+// poner su contrasena. 202, o 503 si ms-notificaciones no respondio (entonces se le pone una temporal).
+export function enviarEnlaceRestablecer(usuarioId, token) {
+  return pedir(`${BASE}/admin/usuarios/${usuarioId}/password/enlace`, { metodo: 'POST', token });
+}
+
+// POST /password/restablecer (publico, con el token del enlace del correo) -> 204, o 400 si el enlace no sirve
+export function restablecerConEnlace(token, passwordNueva) {
+  return pedir(`${BASE}/password/restablecer`, { metodo: 'POST', cuerpo: { token, passwordNueva } });
+}
