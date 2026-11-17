@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import useDatos from '../hooks/useDatos';
-import { cambiarEstado, listarUsuarios, subirFoto } from '../api/usuarios';
+import { actualizarUsuario, cambiarEstado, listarUsuarios, subirFoto } from '../api/usuarios';
 import { correoNoEnviado, enviarEnlaceRestablecer, registroAdmin, restablecerPassword } from '../api/auth';
 import Icono from '../components/Icono';
 import { Aviso, Avatar, Boton, SelectorFoto, Campo, Entrada, Estado, ErrorServicio, EsqueletoTabla, Modal, Panel, Pestanas, Selector, Tarjeta, TituloPagina, Vacio } from '../components/ui';
@@ -293,6 +293,104 @@ function RestablecerPassword({ usuario, onCerrar, onListo, onEnlace }) {
   );
 }
 
+// ---------- Cambiar tipo de usuario (PUT /usuarios/{id} con el perfil completo) ----------
+// Solo el ADMINISTRADOR. ms-usuarios exige el documento del tipo nuevo: RFC para DOCENTE, ORGANIZADOR y
+// ADMINISTRADOR, numero de control para ESTUDIANTE. Si falta, se pide aqui. El rol nuevo se aplica en el
+// siguiente inicio de sesion de esa persona y le llega la alerta 3 por correo.
+function CambiarTipo({ usuario, onCerrar, onListo }) {
+  const { sesion } = useAuth();
+  const [tipo, setTipo] = useState('');
+  const [rfc, setRfc] = useState('');
+  const [numeroControl, setNumeroControl] = useState('');
+  const [error, setError] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    if (usuario) {
+      setTipo(usuario.tipoUsuario);
+      setRfc(usuario.rfc ?? '');
+      setNumeroControl(usuario.numeroControl ?? '');
+      setError(null);
+    }
+  }, [usuario]);
+
+  if (!usuario) return <Modal abierto={false} onCerrar={onCerrar} />;
+
+  const pideRfc = CON_RFC.includes(tipo) && !usuario.rfc;
+  const pideNumero = tipo === 'ESTUDIANTE' && !usuario.numeroControl;
+  const sinCambio = tipo === usuario.tipoUsuario;
+
+  async function guardar() {
+    if (pideRfc && !/^[A-Za-zÑñ&]{3,4}\d{6}[A-Za-z0-9]{3}$/.test(rfc.trim())) return setError('Escribe un RFC válido (12 o 13 caracteres)');
+    if (pideNumero && !numeroControl.trim()) return setError('El estudiante necesita número de control');
+    setGuardando(true);
+    setError(null);
+    try {
+      // ms-usuarios pide el perfil completo: lo que no cambia se manda igual
+      const nuevo = await actualizarUsuario(
+        usuario.id,
+        {
+          nombre: usuario.nombre,
+          apellidos: usuario.apellidos,
+          numeroControl: (pideNumero ? numeroControl.trim() : usuario.numeroControl) || null,
+          rfc: (pideRfc ? rfc.trim().toUpperCase() : usuario.rfc) || null,
+          email: usuario.email,
+          telefono: usuario.telefono || null,
+          fotografiaUrl: usuario.fotografiaUrl ?? null,
+          tipoUsuario: tipo,
+        },
+        sesion.token,
+      );
+      onListo(usuario, nuevo);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <Modal abierto={!!usuario} onCerrar={() => !guardando && onCerrar()}>
+      <div className="p-6">
+        <span className="size-12 rounded-full grid place-items-center mb-4 bg-info-tinte text-info-texto">
+          <Icono nombre="manage_accounts" className="text-[24px]" />
+        </span>
+        <h2 className="font-titulo text-lg font-semibold text-texto">Cambiar el tipo de {nombreCompleto(usuario)}</h2>
+        <p className="text-sm text-texto-2 mt-1 mb-5">
+          Ahora es <b className="text-texto">{nombreTipo(usuario.tipoUsuario)}</b>. El nuevo tipo se aplica la próxima vez que inicie sesión y le llega un correo de aviso. Su usuario para entrar no cambia ({documento(usuario).valor}).
+        </p>
+        <Campo etiqueta="Tipo de usuario" obligatorio error={!pideRfc && !pideNumero ? error : null}>
+          <Selector value={tipo} onChange={(e) => { setTipo(e.target.value); setError(null); }} className="h-11">
+            {Object.entries(TIPOS).map(([v, t]) => (
+              <option key={v} value={v}>
+                {t}
+              </option>
+            ))}
+          </Selector>
+        </Campo>
+        {pideRfc && (
+          <Campo etiqueta="RFC" obligatorio ayuda={`${TIPOS[tipo]} necesita RFC y esta persona no tiene.`} error={error} className="mt-4">
+            <Entrada icono="badge" maxLength={13} value={rfc} onChange={(e) => { setRfc(e.target.value); setError(null); }} error={error} className="uppercase" />
+          </Campo>
+        )}
+        {pideNumero && (
+          <Campo etiqueta="Número de control" obligatorio ayuda="Un estudiante necesita número de control y esta persona no tiene." error={error} className="mt-4">
+            <Entrada icono="badge" maxLength={20} value={numeroControl} onChange={(e) => { setNumeroControl(e.target.value); setError(null); }} error={error} />
+          </Campo>
+        )}
+        <div className="flex justify-end gap-2 mt-6">
+          <Boton variante="secundario" onClick={onCerrar} disabled={guardando}>
+            Cancelar
+          </Boton>
+          <Boton icono="manage_accounts" cargando={guardando} onClick={guardar} disabled={sinCambio}>
+            Cambiar tipo
+          </Boton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export default function Usuarios() {
   const { sesion } = useAuth();
   const datos = useDatos(() => listarUsuarios({}, sesion.token), [sesion.token]);
@@ -304,6 +402,7 @@ export default function Usuarios() {
   const [trabajando, setTrabajando] = useState(false);
   const [mensaje, setMensaje] = useState(null);
   const [restablecer, setRestablecer] = useState(null);
+  const [cambiarTipo, setCambiarTipo] = useState(null);
 
   const todos = useMemo(() => datos.datos ?? [], [datos.datos]);
   const cuentas = useMemo(() => {
@@ -420,6 +519,11 @@ export default function Usuarios() {
                       <td className="px-5 py-3 text-right">
                         {!yo && (
                           <div className="flex justify-end gap-1">
+                            {u.estado === 'ACTIVO' && (
+                              <Boton variante="fantasma" tamano="sm" icono="manage_accounts" onClick={() => setCambiarTipo(u)} title="Cambiar tipo de usuario">
+                                Tipo
+                              </Boton>
+                            )}
                             <Boton variante="fantasma" tamano="sm" icono="key" onClick={() => setRestablecer(u)} title="Restablecer contraseña">
                               Contraseña
                             </Boton>
@@ -454,6 +558,16 @@ export default function Usuarios() {
             tipo: avisoFoto || correoNoEnviado(avisoCorreo) || r?.credencialesEnviadas === false ? 'aviso' : 'exito',
             texto: [`Se creó la cuenta de ${f.nombre} ${f.apellidos}.`, credenciales, avisoCorreo && `${avisoCorreo}.`, avisoFoto].filter(Boolean).join(' '),
           });
+          datos.recargar();
+        }}
+      />
+
+      <CambiarTipo
+        usuario={cambiarTipo}
+        onCerrar={() => setCambiarTipo(null)}
+        onListo={(u, nuevo) => {
+          setCambiarTipo(null);
+          setMensaje({ tipo: 'exito', texto: `${nombreCompleto(u)} ahora es ${nombreTipo(nuevo?.tipoUsuario ?? '')}. Se aplica la próxima vez que inicie sesión y le llegó un aviso por correo.` });
           datos.recargar();
         }}
       />
