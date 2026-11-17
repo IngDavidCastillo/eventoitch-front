@@ -6,7 +6,9 @@ import { useSyncExternalStore } from 'react';
 import { AGENDA_URL, AUTH_URL, CATEGORIAS_URL, ESPACIOS_URL, EVENTOS_URL, USUARIOS_URL } from './cliente';
 
 const CADA_MS = 3000; // cada cuanto se revisa
-const ESPERA_MS = 2500; // cuanto se espera a que un servicio conteste
+const ESPERA_MS = 5000; // cuanto se espera a que un servicio conteste (el Wi-Fi de la escuela a veces tarda 2 s)
+const FALLAS_PARA_CAIDO = 2; // un tropiezo de la red no lo marca caido: tiene que fallar 2 revisiones seguidas
+const fallas = new Map(); // id -> revisiones seguidas sin respuesta
 
 // Los que esperamos ver. Si alguien registra otro servicio en Eureka, tambien aparece en la lista.
 const CONOCIDOS = [
@@ -91,6 +93,10 @@ async function revisar() {
           url = enEureka.url;
           vivo = true;
         }
+        // Si estaba en linea y solo fallo una vez (red lenta), se sigue mostrando en linea
+        const seguidas = vivo ? 0 : (fallas.get(s.id) ?? 0) + 1;
+        fallas.set(s.id, seguidas);
+        if (!vivo && seguidas < FALLAS_PARA_CAIDO && desde.get(s.id)?.en) vivo = true;
         let motivo;
         if (vivo) motivo = enEureka || !registro ? 'En línea' : 'En línea, sin registrar en Eureka';
         else if (registro && !enEureka) motivo = 'No registrado en Eureka';
