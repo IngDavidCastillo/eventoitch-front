@@ -45,6 +45,17 @@ async function responde(base) {
   }
 }
 
+// Direccion de una instancia de Eureka. En la nube los micros se registran con su nombre publico y https
+// (puerto seguro habilitado); en la red local, con su IP y su puerto http.
+function direccion(inst) {
+  const seguro = inst.securePort?.['@enabled'] === 'true' || inst.securePort?.['@enabled'] === true;
+  if (seguro) {
+    const puerto = Number(inst.securePort?.$ ?? 443);
+    return `https://${inst.hostName}${puerto === 443 ? '' : `:${puerto}`}`;
+  }
+  return `http://${inst.ipAddr}:${inst.port?.$ ?? inst.port}`;
+}
+
 async function leerEureka() {
   const control = new AbortController();
   const t = setTimeout(() => control.abort(), ESPERA_MS);
@@ -56,7 +67,7 @@ async function leerEureka() {
     const mapa = new Map();
     for (const app of apps) {
       const inst = [].concat(app.instance ?? []).find((i) => i.status === 'UP') ?? [].concat(app.instance ?? [])[0];
-      if (inst) mapa.set(app.name.toUpperCase(), { url: `http://${inst.ipAddr}:${inst.port?.$ ?? inst.port}`, estado: inst.status });
+      if (inst) mapa.set(app.name.toUpperCase(), { url: direccion(inst), estado: inst.status });
     }
     return mapa;
   } catch {
