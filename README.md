@@ -56,3 +56,12 @@ src/
 - Cuando tu vista esté lista: `git push -u origin vista-eventos` y abre un Pull Request en GitHub.
 - Otra persona del equipo lo revisa contra DISENO.md y lo une a `main`.
 - Antes de empezar cada día: `git checkout main && git pull`.
+
+## Subirlo a la nube (Vercel)
+
+1. En Vercel: Add New › Project › repositorio `eventoitch-front` (rama `main`). Vercel detecta Vite: build `npm run build`, carpeta `dist`.
+2. Settings › Environment Variables, con las URL **https** públicas de cada servicio (sin `/` al final): `VITE_AUTH_URL`, `VITE_USUARIOS_URL`, `VITE_AGENDA_URL` y, como respaldo, `VITE_ESPACIOS_URL`, `VITE_EVENTOS_URL`, `VITE_CATEGORIAS_URL`. Después de cambiarlas hay que volver a desplegar (Redeploy), porque Vite las mete al compilar.
+3. `vercel.json`: cambiar `CAMBIAR-POR-EL-EUREKA-DEL-EQUIPO.onrender.com` por la dirección del Eureka del equipo. Así el indicador de servicios puede leer Eureka (el navegador no puede hacerlo directo porque Eureka no manda permisos CORS). La otra regla manda todas las rutas a `index.html` para que funcionen enlaces como `/restablecer?token=...`.
+4. La URL que da Vercel (ej. `https://eventoitch.vercel.app`) va en `CORS_ORIGENES` de los micros y en `FRONT_URL` de ms-autenticacion.
+
+En la nube los micros se registran en Eureka con su nombre público y https; el indicador y la lista de espacios ya usan esa dirección.
