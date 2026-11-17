@@ -217,6 +217,9 @@ html.tema-transicion, html.tema-transicion * {
 :root[data-foco="resaltado"] main a { text-decoration: underline; text-underline-offset: 3px; }
 :root[data-foco="resaltado"] :where(a, button, summary, [role="switch"], [tabindex]):focus-visible { outline: 3px solid var(--color-oro) !important; outline-offset: 3px; }
 :root[data-foco="resaltado"] :where(input, select, textarea):focus-visible { box-shadow: 0 0 0 3px var(--color-oro) !important; }
+/* En los campos con icono (Entrada) el marco va en la caja completa, no en el input de adentro (se veia una raya cafe dentro del campo) */
+:root[data-foco="resaltado"] .campo-entrada input:focus-visible { box-shadow: none !important; }
+:root[data-foco="resaltado"] .campo-entrada:focus-within { box-shadow: 0 0 0 3px var(--color-oro) !important; }
 
 .scroll-fino::-webkit-scrollbar { width: 6px; height: 6px; }
 .scroll-fino::-webkit-scrollbar-thumb { background: #cfd4dc; border-radius: 9999px; }

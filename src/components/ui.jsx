@@ -134,7 +134,7 @@ export function Campo({ etiqueta, ayuda, error, obligatorio, extra, children, cl
 export function Entrada({ icono, error, derecha, className = '', ...props }) {
   return (
     <span
-      className={`flex items-center gap-2 h-11 rounded-lg border bg-superficie px-3 transition-colors focus-within:border-marino focus-within:ring-2 focus-within:ring-marino-tinte ${error ? 'border-peligro bg-peligro-tinte/40' : 'border-borde'} ${className}`}
+      className={`campo-entrada flex items-center gap-2 h-11 rounded-lg border bg-superficie px-3 transition-colors focus-within:border-marino focus-within:ring-2 focus-within:ring-marino-tinte ${error ? 'border-peligro bg-peligro-tinte/40' : 'border-borde'} ${className}`}
     >
       {icono && <Icono nombre={icono} className="text-[18px] text-tenue" />}
       <input {...props} className="flex-1 min-w-0 bg-transparent text-sm text-texto placeholder:text-tenue outline-none tabular" />
