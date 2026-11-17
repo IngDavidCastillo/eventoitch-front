@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/eureka/:ruta*", "destination": "https://CAMBIAR-POR-EL-EUREKA-DEL-EQUIPO.onrender.com/eureka/:ruta*" },
+    { "source": "/eureka/:ruta*", "destination": "https://eventoitch-eureka.onrender.com/eureka/:ruta*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
