@@ -65,3 +65,26 @@ src/
 4. La URL que da Vercel (ej. `https://eventoitch.vercel.app`) va en `CORS_ORIGENES` de los micros y en `FRONT_URL` de ms-autenticacion.
 
 En la nube los micros se registran en Eureka con su nombre público y https; el indicador y la lista de espacios ya usan esa dirección.
+
+### Cómo quedó (17-nov-2026)
+
+URL pública: **https://eventoitch-front.vercel.app** (Vercel, plan Hobby gratis).
+
+| Servicio | Dónde | URL |
+| --- | --- | --- |
+| Front | Vercel | https://eventoitch-front.vercel.app |
+| Eureka | Render (Docker, gratis) | https://eventoitch-eureka.onrender.com |
+| ms-autenticacion | Clever Cloud XS + MySQL Clever Cloud | https://app-da385a8b-7643-44a4-bbcd-17e19d0061f3.cleverapps.io |
+| ms-usuarios | Railway + MySQL Railway | https://eventoitch-ms-usuarios-production.up.railway.app |
+| ms-agenda | Render (Docker, gratis) + TiDB Cloud | https://eventoitch-ms-agenda.onrender.com |
+
+Variables en Vercel: `VITE_AUTH_URL`, `VITE_USUARIOS_URL` y `VITE_AGENDA_URL` con esas URL, y `VITE_ESPACIOS_RESPALDO=1,2,3,4`.
+
+**Antes de una prueba (unos 15 min antes), en este orden:**
+1. Abrir https://eventoitch-eureka.onrender.com para despertar Eureka.
+2. Railway: MySQL y luego ms-usuarios › Deployments › ⋮ › *Redeploy* (si estaban apagados).
+3. Clever Cloud: ms-autenticacion › *START* (3 a 5 min).
+4. Abrir https://eventoitch-ms-agenda.onrender.com/actuator/health para despertar agenda.
+5. Entrar al front y revisar que el indicador marque los tres servicios en verde.
+
+Para no gastar después: Clever Cloud › *STOP APP* y Railway › ⋮ › *Remove* (los datos se quedan en sus volúmenes). Render, TiDB y Vercel son gratis.
