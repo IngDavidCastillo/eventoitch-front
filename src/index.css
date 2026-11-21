@@ -112,6 +112,13 @@
 }
 :root[data-tema="oscuro"] .scroll-fino::-webkit-scrollbar-thumb { background: #2c3a55; }
 :root[data-tema="oscuro"] .cuadricula { background-color: var(--color-marca); }
+/* La lista nativa del <select> toma el fondo del select (transparente) y en Windows sale blanca:
+   se le da el color de superficie a cada opcion para que respete el modo oscuro. */
+:root[data-tema="oscuro"] select option,
+:root[data-tema="oscuro"] select optgroup {
+  background-color: var(--color-superficie);
+  color: var(--color-texto);
+}
 
 html { -webkit-font-smoothing: antialiased; }
 body { background: var(--color-lienzo); color: var(--color-texto); }
