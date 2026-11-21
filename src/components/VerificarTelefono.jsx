@@ -90,6 +90,8 @@ export default function VerificarTelefono() {
               <>
                 Te mandamos un SMS al <b className="text-texto">{perfil.telefono}</b> con un código. Escríbelo aquí.
               </>
+            ) : error ? (
+              'No se pudo mandar el SMS. Revisa el mensaje de abajo e intenta de nuevo.'
             ) : (
               'Estamos mandando el SMS...'
             )}
