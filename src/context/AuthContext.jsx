@@ -57,10 +57,20 @@ export function AuthProvider({ children }) {
     abrir(r, recordar);
   }
 
-  // Registro publico: el backend responde igual que el login, asi que la sesion queda abierta
+  // Registro publico: si hay que confirmar el correo (requiereVerificarEmail) no viene token y no se abre sesion;
+  // la pantalla de registro pide el codigo y despues entra con entrarConCorreoVerificado().
   async function registrarse(datos) {
     const r = await authApi.registro(datos);
-    abrir(r, false);
+    if (r?.token) abrir(r, false);
+    return r;
+  }
+
+  // Despues de confirmar el correo: inicia sesion con lo que la persona ya escribio y regresa la respuesta
+  // (con el token, para subir la foto del registro).
+  async function entrarConCorreoVerificado(username, password, recordar = false) {
+    const r = await authApi.login(username, password);
+    if (r?.requiereCambioPassword) return r;
+    abrir(r, recordar);
     return r;
   }
 
@@ -145,6 +155,7 @@ export function AuthProvider({ children }) {
         iniciarSesion,
         cambiarPasswordTemporal,
         registrarse,
+        entrarConCorreoVerificado,
         cerrarSesion,
         olvidarSesion,
         inactividad,

@@ -8,10 +8,11 @@ import { Aviso, Boton, Campo, Entrada } from '../components/ui';
 import Marca from '../components/layout/Marca';
 import BotonTema from '../components/BotonTema';
 import LadoInstitucional from './LadoInstitucional';
+import VerificarCorreo from '../components/VerificarCorreo';
 
 // Contrasena temporal (la restablecio un ADMINISTRADOR): hay que poner una propia antes de entrar.
 // Se manda la temporal (la que se acaba de escribir) y la nueva a POST /auth/password/temporal, que da el token.
-function PasoCambio({ aviso, username, temporal, recordar, onListo, onCancelar }) {
+function PasoCambio({ aviso, username, temporal, recordar, onListo, onCancelar, onCorreo }) {
   const { cambiarPasswordTemporal } = useAuth();
   const [form, setForm] = useState({ nueva: '', repetir: '' });
   const [ver, setVer] = useState(false);
@@ -35,8 +36,10 @@ function PasoCambio({ aviso, username, temporal, recordar, onListo, onCancelar }
       await cambiarPasswordTemporal(username, temporal, form.nueva, recordar);
       onListo();
     } catch (err) {
+      // La contrasena nueva ya se guardo, pero falta confirmar el correo: se pide el codigo y luego se entra con la nueva
+      if (err.codigo === 'EMAIL_NO_VERIFICADO') onCorreo(form.nueva, err.message);
       // 401/429: la temporal ya no sirve o la cuenta se bloqueo; hay que volver a iniciar sesion
-      if (err.status === 401 || err.status === 429) onCancelar(err.message);
+      else if (err.status === 401 || err.status === 429) onCancelar(err.message);
       else setError(err.message);
     } finally {
       setEnviando(false);
@@ -84,6 +87,8 @@ export default function Login() {
   const { sesion, iniciarSesion, cierre, setCierre } = useAuth();
   // Contrasena temporal: el backend pide cambiarla antes de dar el token (respuesta 202)
   const [cambio, setCambio] = useState(null);
+  // Correo sin confirmar (403 EMAIL_NO_VERIFICADO): { mensaje, password } para pedir el codigo y luego entrar
+  const [correo, setCorreo] = useState(null);
   const navigate = useNavigate();
   const { state } = useLocation();
   const [form, setForm] = useState({ username: '', password: '', recordar: true });
@@ -118,6 +123,10 @@ export default function Login() {
       setCierre(null);
       navigate(preferencia('inicio'), { replace: true });
     } catch (err) {
+      if (err.codigo === 'EMAIL_NO_VERIFICADO') {
+        setCorreo({ mensaje: err.message, password: form.password });
+        return;
+      }
       setError(
         err.status === 401
           ? { titulo: 'Usuario o contraseña incorrectos', texto: 'Revisa tus datos. Si tu cuenta está inactiva, contacta al administrador.' }
@@ -171,7 +180,24 @@ export default function Login() {
             </Aviso>
           )}
 
-          {cambio ? (
+          {correo ? (
+            <VerificarCorreo
+              usuario={form.username.trim()}
+              mensaje={`${correo.mensaje}. Escríbelo aquí; vence en 15 minutos.`}
+              onListo={async () => {
+                // Correo confirmado: se entra con la misma contrasena (o con la nueva, si venia de cambiar la temporal)
+                const pendiente = await iniciarSesion(form.username.trim(), correo.password, form.recordar);
+                setCorreo(null);
+                if (pendiente) return setCambio(pendiente);
+                setCierre(null);
+                navigate(preferencia('inicio'), { replace: true });
+              }}
+              onCancelar={() => {
+                setCorreo(null);
+                setForm((f) => ({ ...f, password: '' }));
+              }}
+            />
+          ) : cambio ? (
             <PasoCambio
               aviso={cambio.message}
               username={form.username.trim()}
@@ -180,6 +206,10 @@ export default function Login() {
               onListo={() => {
                 setCierre(null);
                 navigate(preferencia('inicio'), { replace: true });
+              }}
+              onCorreo={(nueva, mensaje) => {
+                setCambio(null);
+                setCorreo({ mensaje, password: nueva });
               }}
               onCancelar={(motivo) => {
                 setCambio(null);

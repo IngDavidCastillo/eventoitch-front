@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import useDatos from '../hooks/useDatos';
-import { actualizarUsuario, cambiarEstado, listarUsuarios, subirFoto } from '../api/usuarios';
+import { actualizarUsuario, cambiarEstado, listarUsuarios, marcarCorreoVerificado, reenviarCodigoDe, subirFoto } from '../api/usuarios';
 import { correoNoEnviado, enviarEnlaceRestablecer, registroAdmin, restablecerPassword } from '../api/auth';
 import Icono from '../components/Icono';
-import { Aviso, Avatar, Boton, SelectorFoto, Campo, Entrada, Estado, ErrorServicio, EsqueletoTabla, Modal, Panel, Pestanas, Selector, Tarjeta, TituloPagina, Vacio } from '../components/ui';
+import { Aviso, Avatar, Boton, Insignia, SelectorFoto, Campo, Entrada, Estado, ErrorServicio, EsqueletoTabla, Modal, Panel, Pestanas, Selector, Tarjeta, TituloPagina, Vacio } from '../components/ui';
 import { TIPOS, documento, nombreCompleto, nombreTipo, telefono } from '../utils/formato';
 
 const CON_RFC = ['DOCENTE', 'ADMINISTRADOR', 'ORGANIZADOR'];
@@ -437,6 +437,25 @@ export default function Usuarios() {
     }
   }
 
+  // Correo sin confirmar: el administrador puede mandarle otro codigo o marcarlo verificado (el responde por el)
+  async function correo(u, accion) {
+    setTrabajando(true);
+    try {
+      if (accion === 'reenviar') {
+        await reenviarCodigoDe(u.id, sesion.token);
+        setMensaje({ tipo: 'exito', texto: `Se le mandó un código nuevo a ${u.email}.` });
+      } else {
+        await marcarCorreoVerificado(u.id, sesion.token);
+        setMensaje({ tipo: 'exito', texto: `El correo de ${nombreCompleto(u)} quedó verificado; ya puede iniciar sesión.` });
+        datos.recargar();
+      }
+    } catch (err) {
+      setMensaje({ tipo: 'error', texto: err.message });
+    } finally {
+      setTrabajando(false);
+    }
+  }
+
   const activos = todos.filter((u) => u.estado === 'ACTIVO').length;
 
   return (
@@ -504,6 +523,11 @@ export default function Usuarios() {
                               {nombreCompleto(u)} {yo && <span className="text-xs text-texto-2">(tú)</span>}
                             </p>
                             <p className="text-xs text-texto-2 truncate">{u.email}</p>
+                            {u.emailVerificado === false && (
+                              <Insignia tono="aviso" className="mt-1">
+                                Correo sin verificar
+                              </Insignia>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -523,6 +547,16 @@ export default function Usuarios() {
                               <Boton variante="fantasma" tamano="sm" icono="manage_accounts" onClick={() => setCambiarTipo(u)} title="Cambiar tipo de usuario">
                                 Tipo
                               </Boton>
+                            )}
+                            {u.emailVerificado === false && (
+                              <>
+                                <Boton variante="fantasma" tamano="sm" icono="forward_to_inbox" disabled={trabajando} onClick={() => correo(u, 'reenviar')} title="Mandarle otro código a su correo">
+                                  Código
+                                </Boton>
+                                <Boton variante="fantasma" tamano="sm" icono="mark_email_read" disabled={trabajando} onClick={() => correo(u, 'marcar')} title="Marcar su correo como verificado">
+                                  Verificar
+                                </Boton>
+                              </>
                             )}
                             <Boton variante="fantasma" tamano="sm" icono="key" onClick={() => setRestablecer(u)} title="Restablecer contraseña">
                               Contraseña
