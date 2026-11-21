@@ -19,10 +19,12 @@ export function urlFoto(fotografiaUrl) {
 }
 
 export class ErrorApi extends Error {
-  constructor(status, mensaje, detalles = []) {
+  // codigo: el campo "error" del backend (VALIDACION, EMAIL_NO_VERIFICADO...), para distinguir dos 403 distintos
+  constructor(status, mensaje, detalles = [], codigo = null) {
     super(mensaje);
     this.status = status;
     this.detalles = detalles;
+    this.codigo = codigo;
   }
 }
 
@@ -86,7 +88,7 @@ async function hablar(url, { metodo = 'GET', cuerpo, token, tiempo = 15000 } = {
 
   if (!respuesta.ok) {
     if (respuesta.status === 401 && token) oyentes.noAutorizado.forEach((fn) => fn(datos?.message));
-    throw new ErrorApi(respuesta.status, datos?.message ?? `Error ${respuesta.status}`, datos?.detalles ?? []);
+    throw new ErrorApi(respuesta.status, datos?.message ?? `Error ${respuesta.status}`, datos?.detalles ?? [], datos?.error ?? null);
   }
   if (token) oyentes.actividad.forEach((fn) => fn());
   return datos;
