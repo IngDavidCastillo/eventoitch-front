@@ -52,10 +52,18 @@ src/
 
 ## Cómo trabajamos con Git
 
-- Nadie sube directo a `main`. Cada quien trabaja en su rama: `git checkout -b vista-eventos`.
-- Cuando tu vista esté lista: `git push -u origin vista-eventos` y abre un Pull Request en GitHub.
-- Otra persona del equipo lo revisa contra DISENO.md y lo une a `main`.
-- Antes de empezar cada día: `git checkout main && git pull`.
+Hay dos ramas fijas:
+
+- `develop`: la de trabajo. **Todas las ramas salen de aquí y todos los Pull Request van aquí.**
+- `main`: lo que está publicado en https://eventoitch-front.vercel.app. Solo David pasa `develop` a `main` cuando todo está probado. Nadie abre Pull Request hacia `main`.
+
+Pasos para tu vista:
+
+1. Antes de empezar: `git checkout develop && git pull`.
+2. Crea tu rama desde `develop`: `git checkout -b vista-eventos`.
+3. Cuando esté lista: `git push -u origin vista-eventos` y abre el Pull Request en GitHub. Revisa que arriba diga **base: `develop`** ← `vista-eventos` (si dice `main`, cámbialo con *Edit* junto al título).
+4. David lo revisa contra DISENO.md y lo une a `develop`. Cada Pull Request hacia `develop` tiene su propia vista previa en Vercel (el enlace aparece en el Pull Request).
+5. Si `develop` cambió mientras trabajabas: `git checkout develop && git pull`, regresa a tu rama y `git merge develop`.
 
 ## Subirlo a la nube (Vercel)
 
