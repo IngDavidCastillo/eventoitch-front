@@ -42,3 +42,26 @@ export function subirFoto(id, archivo, token) {
 export function quitarFoto(id, token) {
   return pedir(`${BASE}/${id}/foto`, { metodo: 'DELETE', token });
 }
+
+// ---------- Verificacion del correo (codigo de 6 digitos) ----------
+// usuario = con el que inicia sesion (numero de control, RFC o correo). Publicos: todavia no hay sesion.
+
+// POST /verificar-correo -> 204; 400 con cuantos intentos quedan, o si el codigo vencio
+export function verificarCorreo(usuario, codigo) {
+  return pedir(`${BASE}/verificar-correo`, { metodo: 'POST', cuerpo: { usuario, codigo } });
+}
+
+// POST /verificar-correo/reenviar -> 204 siempre (no revela si la cuenta existe)
+export function reenviarCodigo(usuario) {
+  return pedir(`${BASE}/verificar-correo/reenviar`, { metodo: 'POST', cuerpo: { usuario } });
+}
+
+// POST /{id}/verificar-correo/reenviar (el dueno o ADMINISTRADOR) -> 204; 409 si ya esta verificado; 429
+export function reenviarCodigoDe(id, token) {
+  return pedir(`${BASE}/${id}/verificar-correo/reenviar`, { metodo: 'POST', token });
+}
+
+// PATCH /{id}/verificar-correo (ADMINISTRADOR) -> el usuario con emailVerificado true
+export function marcarCorreoVerificado(id, token) {
+  return pedir(`${BASE}/${id}/verificar-correo`, { metodo: 'PATCH', token });
+}

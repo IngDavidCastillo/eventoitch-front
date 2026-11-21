@@ -1,7 +1,7 @@
 // Esqueleto de las pantallas privadas: menu lateral azul (escritorio), barra superior,
 // pie institucional y barra de pestanas abajo en celular. Tambien abre el panel "Nueva reserva"
 // desde cualquier pantalla con useNuevaReserva().
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { Suspense, createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ROLES_QUE_RESERVAN, nombreCompleto, nombreTipo } from '../../utils/formato';
@@ -23,9 +23,10 @@ const MENU = [
   { a: '/reservas', texto: 'Reservas', icono: 'event_available' },
   { a: '/usuarios', texto: 'Usuarios', icono: 'group', roles: ['ADMINISTRADOR'] },
   { a: '/categorias', texto: 'Categorías', icono: 'sell', roles: ['ADMINISTRADOR', 'ORGANIZADOR'] },
+  { a: '/espacios', texto: 'Espacios', icono: 'location_city', roles: ['ADMINISTRADOR', 'ORGANIZADOR'] },
 ];
 
-const TITULOS = { '/panel': 'Panel principal', '/agenda': 'Agenda', '/reservas': 'Reservas', '/usuarios': 'Usuarios', '/perfil': 'Mi perfil', '/categorias': 'Categorías' };
+const TITULOS = { '/panel': 'Panel principal', '/agenda': 'Agenda', '/reservas': 'Reservas', '/usuarios': 'Usuarios', '/perfil': 'Mi perfil', '/categorias': 'Categorías', '/espacios': 'Espacios' };
 
 function MenuLateral({ onNueva }) {
   const { sesion, cerrarSesion } = useAuth();
@@ -124,9 +125,15 @@ function PieInstitucional() {
   );
 }
 
-// Pestanas abajo en celular: Inicio, Agenda, Reservas, Perfil
+// Pestanas abajo en celular: Inicio, Agenda, Reservas, Perfil y "Mas" (lo demas del menu lateral que puede ver
+// su rol: Usuarios, Categorias, Espacios... y Cerrar sesion). Asi se llega a todo desde el telefono.
+const TABS_CELULAR = ['/panel', '/agenda', '/reservas', '/perfil'];
+
 function BarraCelular({ onNueva }) {
-  const { sesion } = useAuth();
+  const { sesion, cerrarSesion } = useAuth();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const [mas, setMas] = useState(false);
   const reserva = ROLES_QUE_RESERVAN.includes(sesion.rol);
   const tabs = [
     { a: '/panel', texto: 'Inicio', icono: 'home' },
@@ -134,6 +141,8 @@ function BarraCelular({ onNueva }) {
     { a: '/reservas', texto: 'Reservas', icono: 'event_available' },
     { a: '/perfil', texto: 'Perfil', icono: 'person' },
   ];
+  const extras = MENU.filter((m) => !TABS_CELULAR.includes(m.a) && (!m.roles || m.roles.includes(sesion.rol)));
+  const enExtra = extras.some((m) => pathname.startsWith(m.a));
   return (
     <>
       {reserva && (
@@ -146,7 +155,7 @@ function BarraCelular({ onNueva }) {
           Nueva reserva
         </button>
       )}
-      <nav className="lg:hidden fixed z-30 bottom-0 inset-x-0 h-16 bg-superficie border-t border-borde grid grid-cols-4">
+      <nav className="lg:hidden fixed z-30 bottom-0 inset-x-0 h-16 bg-superficie border-t border-borde grid grid-cols-5">
         {tabs.map((t) => (
           <NavLink key={t.a} to={t.a} className={({ isActive }) => `flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium ${isActive ? 'text-marino' : 'text-texto-2'}`}>
             {({ isActive }) => (
@@ -157,7 +166,47 @@ function BarraCelular({ onNueva }) {
             )}
           </NavLink>
         ))}
+        <button
+          type="button"
+          onClick={() => setMas(true)}
+          aria-label="Más opciones"
+          className={`flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium ${enExtra ? 'text-marino' : 'text-texto-2'}`}
+        >
+          <Icono nombre="menu" className="text-[22px]" />
+          Más
+        </button>
       </nav>
+
+      <Modal abierto={mas} onCerrar={() => setMas(false)} ancho="max-w-sm">
+        <div className="p-4">
+          <p className="etiqueta text-texto-2 px-2 mb-2">Más opciones</p>
+          <nav className="flex flex-col gap-1">
+            {extras.map((m) => (
+              <NavLink
+                key={m.a}
+                to={m.a}
+                onClick={() => setMas(false)}
+                className={({ isActive }) => `flex items-center gap-3 h-12 px-3 rounded-lg text-sm ${isActive ? 'bg-marino-tinte text-marino font-semibold' : 'text-texto hover:bg-borde-suave'}`}
+              >
+                <Icono nombre={m.icono} className="text-[22px]" />
+                {m.texto}
+              </NavLink>
+            ))}
+            <button
+              type="button"
+              onClick={async () => {
+                setMas(false);
+                await cerrarSesion();
+                navigate('/login');
+              }}
+              className="flex items-center gap-3 h-12 px-3 rounded-lg text-sm text-peligro-texto hover:bg-peligro-tinte"
+            >
+              <Icono nombre="logout" className="text-[22px]" />
+              Cerrar sesión
+            </button>
+          </nav>
+        </div>
+      </Modal>
     </>
   );
 }
@@ -219,6 +268,35 @@ function AyudaAtajos({ abierta, onCerrar }) {
   );
 }
 
+// ADMINISTRADOR u ORGANIZADOR sin la verificacion en dos pasos: el backend les responde 403 DOS_PASOS_REQUERIDO
+// al crear reservas o en las secciones de administrador. Este aviso los lleva a activarla (no sale en Mi perfil).
+function AvisoDosPasos() {
+  const { sesion } = useAuth();
+  const { pathname } = useLocation();
+  if (!sesion?.requiereActivarDosPasos || pathname.startsWith('/perfil')) return null;
+  return (
+    <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-aviso-borde bg-aviso-tinte px-4 py-3 text-sm text-texto">
+      <Icono nombre="phonelink_lock" className="text-[20px] text-aviso-texto" />
+      <p className="flex-1 min-w-[220px]">
+        <b>Activa la verificación en dos pasos.</b> Tu rol la necesita para crear y mover reservas{sesion.rol === 'ADMINISTRADOR' ? ' y para las secciones de administrador' : ''}.
+      </p>
+      <Link to="/perfil?pestana=seguridad" className="font-semibold text-marino hover:underline">
+        Activarla ahora
+      </Link>
+    </div>
+  );
+}
+
+// Mientras se descarga el codigo de la pantalla (App.jsx la carga con React.lazy)
+export function CargandoPagina() {
+  return (
+    <div className="grid place-items-center py-24 text-texto-2" role="status">
+      <Icono nombre="progress_activity" className="text-[32px] animate-spin" />
+      <span className="sr-only">Cargando...</span>
+    </div>
+  );
+}
+
 export default function Shell({ children }) {
   // Al cambiar de pantalla, el contenido entra con una animacion suave (key en <main>)
   const { pathname } = useLocation();
@@ -237,7 +315,8 @@ export default function Shell({ children }) {
         <div className="lg:pl-[260px] flex flex-col min-h-screen pb-16 lg:pb-0">
           <BarraSuperior />
           <main key={pathname} className="aparecer flex-1 w-full max-w-[1440px] mx-auto px-4 md:px-8 py-6 md:py-8">
-            {children}
+            <AvisoDosPasos />
+            <Suspense fallback={<CargandoPagina />}>{children}</Suspense>
           </main>
           <PieInstitucional />
         </div>

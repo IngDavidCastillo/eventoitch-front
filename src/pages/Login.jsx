@@ -8,10 +8,102 @@ import { Aviso, Boton, Campo, Entrada } from '../components/ui';
 import Marca from '../components/layout/Marca';
 import BotonTema from '../components/BotonTema';
 import LadoInstitucional from './LadoInstitucional';
+import VerificarCorreo from '../components/VerificarCorreo';
 
 // Contrasena temporal (la restablecio un ADMINISTRADOR): hay que poner una propia antes de entrar.
 // Se manda la temporal (la que se acaba de escribir) y la nueva a POST /auth/password/temporal, que da el token.
-function PasoCambio({ aviso, username, temporal, recordar, onListo, onCancelar }) {
+// Verificacion en dos pasos: el login dio un desafio (vence en 5 min); se manda con el codigo de 6 numeros de la
+// app de autenticacion o con uno de los codigos de respaldo (ABCDE-FGHJK) a POST /auth/login/dos-pasos.
+function PasoDosPasos({ desafio, recordar, onListo, onCancelar }) {
+  const { completarDosPasos } = useAuth();
+  const [respaldo, setRespaldo] = useState(false);
+  const [codigo, setCodigo] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState(null);
+
+  const limpio = respaldo ? codigo.toUpperCase().replace(/[^A-Z0-9-]/g, '') : codigo.replace(/\D/g, '');
+  const completo = respaldo ? limpio.replace(/-/g, '').length === 10 : limpio.length === 6;
+
+  async function enviar(e) {
+    e.preventDefault();
+    if (!completo) return setError(respaldo ? 'El código de respaldo tiene 10 caracteres' : 'Escribe los 6 números de tu app');
+    setEnviando(true);
+    setError(null);
+    try {
+      await completarDosPasos(desafio, limpio, recordar);
+      onListo();
+    } catch (err) {
+      // Desafio vencido o anulado (5 codigos malos), o cuenta bloqueada: hay que volver a escribir la contrasena
+      if (err.status === 429 || /vuelve a escribir|venci/i.test(err.message)) onCancelar(err.message);
+      else {
+        setError(err.message);
+        setCodigo('');
+      }
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form onSubmit={enviar} className="mt-8 space-y-5" noValidate>
+      <div className="flex items-start gap-3">
+        <span className="size-11 shrink-0 rounded-full bg-marino-tinte text-marino grid place-items-center">
+          <Icono nombre={respaldo ? 'password' : 'phonelink_lock'} className="text-[24px]" />
+        </span>
+        <div>
+          <h2 className="font-titulo text-lg font-semibold text-texto">Verificación en dos pasos</h2>
+          <p className="text-sm text-texto-2 mt-0.5">
+            {respaldo
+              ? 'Escribe uno de los códigos de respaldo que guardaste al activarla. Cada uno sirve una sola vez.'
+              : 'Abre tu app de autenticación (Google Authenticator, Microsoft Authenticator...) y escribe el código de EventoITCH.'}
+          </p>
+        </div>
+      </div>
+      <Campo etiqueta={respaldo ? 'Código de respaldo' : 'Código de 6 números'} error={error}>
+        <Entrada
+          key={respaldo ? 'r' : 'a'}
+          icono={respaldo ? 'password' : 'pin'}
+          value={limpio}
+          onChange={(e) => {
+            setCodigo(e.target.value);
+            setError(null);
+          }}
+          inputMode={respaldo ? 'text' : 'numeric'}
+          autoComplete="one-time-code"
+          maxLength={respaldo ? 11 : 6}
+          placeholder={respaldo ? 'ABCDE-FGHJK' : '123456'}
+          className="font-mono tracking-widest"
+          error={error}
+          autoFocus
+        />
+      </Campo>
+      <Boton type="submit" tamano="lg" cargando={enviando} disabled={!completo} className="w-full">
+        {enviando ? 'Verificando...' : 'Verificar y entrar'}
+      </Boton>
+      <div className="flex items-center justify-between text-sm">
+        <button
+          type="button"
+          onClick={() => {
+            setRespaldo((v) => !v);
+            setCodigo('');
+            setError(null);
+          }}
+          className="font-semibold text-marino hover:underline"
+        >
+          {respaldo ? 'Usar la app de autenticación' : 'No tengo mi celular'}
+        </button>
+        <button type="button" onClick={() => onCancelar(null)} className="text-texto-2 hover:text-texto">
+          Usar otra cuenta
+        </button>
+      </div>
+      {respaldo && (
+        <p className="text-xs text-texto-2">Si perdiste el celular y los códigos, pide a un administrador que te quite la verificación en dos pasos.</p>
+      )}
+    </form>
+  );
+}
+
+function PasoCambio({ aviso, username, temporal, recordar, onListo, onCancelar, onCorreo, onDosPasos }) {
   const { cambiarPasswordTemporal } = useAuth();
   const [form, setForm] = useState({ nueva: '', repetir: '' });
   const [ver, setVer] = useState(false);
@@ -32,11 +124,15 @@ function PasoCambio({ aviso, username, temporal, recordar, onListo, onCancelar }
     setEnviando(true);
     setError(null);
     try {
-      await cambiarPasswordTemporal(username, temporal, form.nueva, recordar);
+      const r = await cambiarPasswordTemporal(username, temporal, form.nueva, recordar);
+      // La cuenta tiene 2FA: la contrasena nueva ya se guardo, falta el codigo de la app
+      if (r?.requiereDosPasos) return onDosPasos(r);
       onListo();
     } catch (err) {
+      // La contrasena nueva ya se guardo, pero falta confirmar el correo: se pide el codigo y luego se entra con la nueva
+      if (err.codigo === 'EMAIL_NO_VERIFICADO') onCorreo(form.nueva, err.message);
       // 401/429: la temporal ya no sirve o la cuenta se bloqueo; hay que volver a iniciar sesion
-      if (err.status === 401 || err.status === 429) onCancelar(err.message);
+      else if (err.status === 401 || err.status === 429) onCancelar(err.message);
       else setError(err.message);
     } finally {
       setEnviando(false);
@@ -84,6 +180,10 @@ export default function Login() {
   const { sesion, iniciarSesion, cierre, setCierre } = useAuth();
   // Contrasena temporal: el backend pide cambiarla antes de dar el token (respuesta 202)
   const [cambio, setCambio] = useState(null);
+  // Correo sin confirmar (403 EMAIL_NO_VERIFICADO): { mensaje, password } para pedir el codigo y luego entrar
+  const [correo, setCorreo] = useState(null);
+  // Verificacion en dos pasos (202 { requiereDosPasos, desafio }): pide el codigo de la app
+  const [dosPasos, setDosPasos] = useState(null);
   const navigate = useNavigate();
   const { state } = useLocation();
   const [form, setForm] = useState({ username: '', password: '', recordar: true });
@@ -111,6 +211,7 @@ export default function Login() {
     setError(null);
     try {
       const pendiente = await iniciarSesion(form.username.trim(), form.password, form.recordar);
+      if (pendiente?.requiereDosPasos) return setDosPasos(pendiente);
       if (pendiente) {
         setCambio(pendiente);
         return;
@@ -118,6 +219,10 @@ export default function Login() {
       setCierre(null);
       navigate(preferencia('inicio'), { replace: true });
     } catch (err) {
+      if (err.codigo === 'EMAIL_NO_VERIFICADO') {
+        setCorreo({ mensaje: err.message, password: form.password });
+        return;
+      }
       setError(
         err.status === 401
           ? { titulo: 'Usuario o contraseña incorrectos', texto: 'Revisa tus datos. Si tu cuenta está inactiva, contacta al administrador.' }
@@ -171,7 +276,39 @@ export default function Login() {
             </Aviso>
           )}
 
-          {cambio ? (
+          {dosPasos ? (
+            <PasoDosPasos
+              desafio={dosPasos.desafio}
+              recordar={form.recordar}
+              onListo={() => {
+                setCierre(null);
+                navigate(preferencia('inicio'), { replace: true });
+              }}
+              onCancelar={(motivo) => {
+                setDosPasos(null);
+                setForm((f) => ({ ...f, password: '' }));
+                if (motivo) setError({ titulo: 'Inicia sesión de nuevo', texto: motivo });
+              }}
+            />
+          ) : correo ? (
+            <VerificarCorreo
+              usuario={form.username.trim()}
+              mensaje={`${correo.mensaje}. Escríbelo aquí; vence en 15 minutos.`}
+              onListo={async () => {
+                // Correo confirmado: se entra con la misma contrasena (o con la nueva, si venia de cambiar la temporal)
+                const pendiente = await iniciarSesion(form.username.trim(), correo.password, form.recordar);
+                setCorreo(null);
+                if (pendiente?.requiereDosPasos) return setDosPasos(pendiente);
+                if (pendiente) return setCambio(pendiente);
+                setCierre(null);
+                navigate(preferencia('inicio'), { replace: true });
+              }}
+              onCancelar={() => {
+                setCorreo(null);
+                setForm((f) => ({ ...f, password: '' }));
+              }}
+            />
+          ) : cambio ? (
             <PasoCambio
               aviso={cambio.message}
               username={form.username.trim()}
@@ -180,6 +317,14 @@ export default function Login() {
               onListo={() => {
                 setCierre(null);
                 navigate(preferencia('inicio'), { replace: true });
+              }}
+              onDosPasos={(r) => {
+                setCambio(null);
+                setDosPasos(r);
+              }}
+              onCorreo={(nueva, mensaje) => {
+                setCambio(null);
+                setCorreo({ mensaje, password: nueva });
               }}
               onCancelar={(motivo) => {
                 setCambio(null);

@@ -46,7 +46,7 @@ const ESTADOS = {
   RESERVADA: ['info', 'Reservada'],
   LIBERADA: ['neutro', 'Liberada'],
   DISPONIBLE: ['exito', 'Disponible'],
-  MANTENIMIENTO: ['peligro', 'Mantenimiento'],
+  MANTENIMIENTO: ['aviso', 'Mantenimiento'],
   PROGRAMADO: ['info', 'Programado'],
   CANCELADO: ['peligro', 'Cancelado'],
   FINALIZADO: ['neutro', 'Finalizado'],
