@@ -14,6 +14,7 @@ import Reservas from './pages/Reservas';
 import Usuarios from './pages/Usuarios';
 import Perfil from './pages/Perfil';
 import Categorias from './pages/Categorias';
+import Espacios from './pages/Espacios';
 import NoEncontrado from './pages/NoEncontrado';
 
 const privada = (pagina, roles) => (
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/usuarios" element={privada(<Usuarios />, ['ADMINISTRADOR'])} />
         <Route path="/perfil" element={privada(<Perfil />)} />
         <Route path="/categorias" element={privada(<Categorias />, ['ADMINISTRADOR', 'ORGANIZADOR'])} />
+        <Route path="/espacios" element={privada(<Espacios />, ['ADMINISTRADOR', 'ORGANIZADOR'])} />
         <Route path="*" element={<NoEncontrado />} />
       </Routes>
       <VigilanteSesion />

@@ -2,6 +2,7 @@
 // si no esta registrado, se usa VITE_CATEGORIAS_URL de .env.local.
 import { CATEGORIAS_URL, pedir } from './cliente';
 import { urlEnEureka } from './servicios';
+import { busquedaSegura, contieneTexto } from '../utils/validaciones';
 
 async function base() {
   const url = (await urlEnEureka('MS-CATEGORIAS')) || CATEGORIAS_URL;
@@ -16,6 +17,8 @@ export async function listarCategorias(todas, token) {
 
 // GET /categorias/buscar/{nombre} -> las que contienen el texto en el nombre
 export async function buscarCategorias(nombre, todas, token) {
+  // Con "/", ";", "%"... el servidor rechaza la ruta: se busca sobre la lista (ver busquedaSegura)
+  if (!busquedaSegura(nombre)) return (await listarCategorias(todas, token)).filter((c) => contieneTexto(c.nombre, nombre));
   return pedir(`${await base()}/buscar/${encodeURIComponent(nombre)}${todas ? '?todas=true' : ''}`, { token });
 }
 
