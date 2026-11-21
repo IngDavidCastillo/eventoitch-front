@@ -1,5 +1,6 @@
 // Piezas pequenas que usan todas las pantallas, con el estilo de Stitch.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { urlFoto } from '../api/cliente';
 import { TIPOS_FOTO, prepararFoto } from '../utils/imagen';
 import Icono from './Icono';
@@ -51,6 +52,10 @@ const ESTADOS = {
   FINALIZADO: ['neutro', 'Finalizado'],
   EN_RIESGO: ['aviso', 'En riesgo'],
   CONFLICTO: ['peligro', 'Conflicto'],
+  // Estados de ms-eventos que faltaban (Roberta)
+  MANTENIDO: ['info', 'Mantenido'],
+  REPROGRAMADO: ['aviso', 'Reprogramado'],
+  CAMBIO_UBICACION: ['aviso', 'Cambio de ubicación'],
 };
 
 export function Insignia({ tono = 'neutro', punto = false, children, className = '' }) {
@@ -258,15 +263,19 @@ function useEscape(onCerrar) {
   }, [onCerrar]);
 }
 
+// Modal y Panel se dibujan directo en <body> (createPortal). Si se quedaran dentro del contenido de la
+// pagina, la animacion de entrada de <main> (clase "aparecer" de Shell) los encierra y solo cubren esa zona
+// en lugar de toda la pantalla. (Roberta)
 export function Modal({ abierto, onCerrar, children, ancho = 'max-w-md' }) {
   useEscape(abierto ? onCerrar : null);
   if (!abierto) return null;
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onMouseDown={(e) => e.target === e.currentTarget && onCerrar?.()}>
       <div role="dialog" aria-modal="true" className={`w-full ${ancho} bg-superficie rounded-2xl border border-borde shadow-xl`}>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -274,7 +283,7 @@ export function Modal({ abierto, onCerrar, children, ancho = 'max-w-md' }) {
 export function Panel({ abierto, onCerrar, titulo, subtitulo, pie, children }) {
   useEscape(abierto ? onCerrar : null);
   if (!abierto) return null;
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onMouseDown={(e) => e.target === e.currentTarget && onCerrar()}>
       <aside role="dialog" aria-modal="true" className="w-full sm:max-w-[600px] h-full bg-superficie flex flex-col shadow-2xl">
         <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-borde">
@@ -292,7 +301,8 @@ export function Panel({ abierto, onCerrar, titulo, subtitulo, pie, children }) {
         <div className="flex-1 overflow-y-auto scroll-fino px-6 py-5">{children}</div>
         {pie && <footer className="border-t border-borde px-6 py-4 bg-superficie">{pie}</footer>}
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -398,5 +408,268 @@ export function SelectorFoto({ perfil, foto, onElegir, onQuitar, cargando = fals
         </p>
       )}
     </div>
+  );
+}
+
+// =====================================================================================================
+// Piezas agregadas por Roberta (vistas de Categorías, Espacios y Eventos). Usan solo los tokens del
+// sistema, así funcionan en modo claro y oscuro. Cualquier vista las puede usar.
+// =====================================================================================================
+
+const limitar = (v, min, max) => Math.min(max, Math.max(min, v));
+
+// ---------- Globo de ayuda ----------
+// Aparece al pasar el mouse (o con el teclado). Se dibuja en <body> para que una tabla con scroll no lo recorte.
+// lado: 'arriba' (sobre el elemento; si no cabe, abajo) o 'izquierda' (a un lado, centrado; para botones flotantes).
+export function Globo({ texto, children, className = '', lado = 'arriba' }) {
+  const [pos, setPos] = useState(null);
+  const caja = useRef(null);
+  const globo = useRef(null);
+  function mostrar() {
+    if (!texto) return;
+    const r = caja.current.getBoundingClientRect();
+    if (lado === 'izquierda') return setPos({ lado, x: r.left - 8, y: r.top + r.height / 2 });
+    const x = r.left + r.width / 2;
+    setPos(r.top < 120 ? { lado, x, y: r.bottom + 8, abajo: true } : { lado, x, y: r.top - 8, abajo: false });
+  }
+  const ocultar = () => setPos(null);
+  // Si el globo se saldría de la pantalla por un lado, se recorre solo lo necesario (según su ancho real)
+  useLayoutEffect(() => {
+    if (!pos || pos.lado !== 'arriba' || !globo.current) return;
+    const mitad = globo.current.offsetWidth / 2;
+    globo.current.style.left = `${limitar(pos.x, mitad + 8, window.innerWidth - mitad - 8)}px`;
+  }, [pos]);
+  const colocacion =
+    pos?.lado === 'izquierda' ? '-translate-x-full -translate-y-1/2' : `-translate-x-1/2 ${pos?.abajo ? '' : '-translate-y-full'}`;
+  return (
+    <span ref={caja} onMouseEnter={mostrar} onMouseLeave={ocultar} onFocus={mostrar} onBlur={ocultar} className={className}>
+      {children}
+      {pos &&
+        createPortal(
+          <span
+            ref={globo}
+            role="tooltip"
+            className={`aparecer pointer-events-none fixed z-[60] w-max max-w-sm rounded-lg border border-borde bg-superficie px-3 py-2 text-xs leading-relaxed text-texto shadow-xl break-words ${colocacion}`}
+            style={{ left: pos.x, top: pos.y }}
+          >
+            {texto}
+          </span>,
+          document.body,
+        )}
+    </span>
+  );
+}
+
+// ---------- Formularios: ayuda, contador, sección y área de texto ----------
+// Línea de ayuda con ícono (para el `ayuda` de Campo): tono 'info' o 'aviso'
+const TONOS_AYUDA = { info: ['info', 'text-info-texto'], aviso: ['warning', 'text-aviso-texto'] };
+export function LineaAyuda({ tono = 'info', children }) {
+  const [icono, color] = TONOS_AYUDA[tono];
+  return (
+    <span className={`flex items-start gap-1 ${color}`}>
+      <Icono nombre={icono} className="mt-px text-[14px]" />
+      {children}
+    </span>
+  );
+}
+
+// Contador de caracteres (para el `extra` de Campo): cambia a color de aviso al llegar al máximo
+export function ContadorCaracteres({ actual, maximo }) {
+  return <span className={`text-xs tabular ${actual >= maximo ? 'font-semibold text-aviso-texto' : 'text-texto-2'}`}>{actual}/{maximo}</span>;
+}
+
+// Sección numerada de un formulario en Panel ("1. DATOS GENERALES"), como la del panel "Nueva reserva"
+export function SeccionFormulario({ numero, titulo, extra, children }) {
+  return (
+    <section className="mb-4">
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <h3 className="etiqueta text-texto">
+          {numero}. {titulo}
+        </h3>
+        {extra}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+// Caja de texto de varios renglones con el mismo estilo que Entrada (tamaño fijo, sin esquina para estirar)
+export function AreaTexto({ error, rows = 4, className = '', ...props }) {
+  return (
+    <textarea
+      rows={rows}
+      {...props}
+      className={`block w-full resize-none rounded-lg border bg-superficie px-3 py-2.5 text-sm text-texto placeholder:text-tenue outline-none transition-colors focus:border-marino focus:ring-2 focus:ring-marino-tinte ${error ? 'border-peligro' : 'border-borde'} ${className}`}
+    />
+  );
+}
+
+// ---------- Aviso temporal de un renglón ----------
+// Para ponerlo junto al botón de TituloPagina. Mide lo mismo que un botón (h-10) para que el encabezado no
+// cambie de alto; lo que no cabe termina en "..." y se ve completo en el globo. El de éxito se desvanece a los 6 s.
+// Cada mensaje nuevo debe llevar su propio `key` (ej. un id) para que empiece otra vez visible.
+export function AvisoTemporal({ mensaje, onCerrar }) {
+  const [saliendo, setSaliendo] = useState(false);
+  useEffect(() => {
+    if (mensaje.tipo !== 'exito') return;
+    const t = setTimeout(() => setSaliendo(true), 6000);
+    return () => clearTimeout(t);
+  }, [mensaje]);
+  useEffect(() => {
+    if (!saliendo) return;
+    const t = setTimeout(onCerrar, 500);
+    return () => clearTimeout(t);
+  }, [saliendo, onCerrar]);
+  // Dos capas: la de afuera entra con la animación "aparecer"; la de adentro se desvanece al salir
+  return (
+    <div className="aparecer min-w-0 w-full sm:w-auto sm:max-w-[600px]" role="region" aria-label="Avisos">
+      <div className={`transition-opacity duration-500 ${saliendo ? 'opacity-0' : 'opacity-100'}`}>
+        <Aviso tipo={mensaje.tipo} onCerrar={() => setSaliendo(true)} className="h-10 items-center py-0">
+          <Globo texto={mensaje.texto} className="block">
+            <span className="block truncate">{mensaje.texto}</span>
+          </Globo>
+        </Aviso>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Menú desplegable ----------
+// Alternativa a Selector que respeta el modo oscuro (la lista nativa del <select> sale blanca en oscuro).
+// opciones: [{ valor, texto, icono? }]
+export function MenuDesplegable({ valor, onChange, opciones, etiqueta, icono = 'sort', ancho = 'w-52' }) {
+  const [abierto, setAbierto] = useState(false);
+  const caja = useRef(null);
+  const actual = opciones.find((o) => o.valor === valor) ?? opciones[0];
+  useEffect(() => {
+    if (!abierto) return;
+    const fuera = (e) => !caja.current?.contains(e.target) && setAbierto(false);
+    const tecla = (e) => e.key === 'Escape' && setAbierto(false);
+    document.addEventListener('mousedown', fuera);
+    document.addEventListener('keydown', tecla);
+    return () => {
+      document.removeEventListener('mousedown', fuera);
+      document.removeEventListener('keydown', tecla);
+    };
+  }, [abierto]);
+  return (
+    <div ref={caja} className="relative">
+      <button
+        type="button"
+        onClick={() => setAbierto((a) => !a)}
+        aria-haspopup="listbox"
+        aria-expanded={abierto}
+        className="flex h-10 items-center gap-2 rounded-lg border border-borde bg-superficie px-3 text-sm text-texto hover:bg-borde-suave"
+      >
+        {icono && <Icono nombre={icono} className="text-[18px] text-texto-2" />}
+        {etiqueta && <span className="text-texto-2 hidden sm:inline">{etiqueta}:</span>}
+        <span className="font-medium">{actual.texto}</span>
+        <Icono nombre="expand_more" className={`text-[18px] text-texto-2 transition-transform ${abierto ? 'rotate-180' : ''}`} />
+      </button>
+      {abierto && (
+        <ul role="listbox" className={`aparecer absolute right-0 top-12 z-30 ${ancho} rounded-xl border border-borde bg-superficie p-1 shadow-xl`}>
+          {opciones.map((o) => (
+            <li key={o.valor}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={o.valor === valor}
+                onClick={() => {
+                  onChange(o.valor);
+                  setAbierto(false);
+                }}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${o.valor === valor ? 'bg-marino-tinte font-semibold text-marino' : 'text-texto hover:bg-borde-suave'}`}
+              >
+                {o.icono && <Icono nombre={o.icono} className="text-[18px]" />}
+                <span className="flex-1">{o.texto}</span>
+                {o.valor === valor && <Icono nombre="check" className="text-[18px]" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ---------- Botón "Volver arriba" ----------
+// Aparece al bajar 200 px. Nunca se encima al pie de página: si el pie ya se ve, sube y queda justo arriba.
+// En celular va más arriba para no tapar el botón "Nueva reserva" ni la barra de abajo.
+export function BotonArriba() {
+  const [abajo, setAbajo] = useState(null); // distancia al borde inferior; null = oculto
+  useEffect(() => {
+    const revisar = () => {
+      if (window.scrollY <= 200) return setAbajo(null);
+      const base = window.matchMedia('(min-width: 1024px)').matches ? 24 : 144;
+      const pie = document.querySelector('main + footer');
+      const altoPieVisible = pie ? Math.max(0, window.innerHeight - pie.getBoundingClientRect().top) : 0;
+      setAbajo(Math.max(base, altoPieVisible + 16));
+    };
+    revisar();
+    window.addEventListener('scroll', revisar, { passive: true });
+    window.addEventListener('resize', revisar);
+    return () => {
+      window.removeEventListener('scroll', revisar);
+      window.removeEventListener('resize', revisar);
+    };
+  }, []);
+  if (abajo === null) return null;
+  return createPortal(
+    <div className="aparecer fixed right-4 z-30 lg:right-6" style={{ bottom: abajo }}>
+      <Globo texto="Volver arriba" lado="izquierda">
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          aria-label="Volver arriba"
+          className="grid size-11 place-items-center rounded-full bg-marino text-white shadow-xl hover:bg-marino-osc"
+        >
+          <Icono nombre="arrow_upward" className="text-[22px]" />
+        </button>
+      </Globo>
+    </div>,
+    document.body,
+  );
+}
+
+// ---------- Ventana de confirmación ----------
+// Para acciones que hay que confirmar (dar de baja, descartar cambios...). tono: 'peligro' | 'aviso' | 'exito' | 'info'
+const TONOS_CONFIRMAR = {
+  peligro: 'bg-peligro-tinte text-peligro',
+  aviso: 'bg-aviso-tinte text-aviso-texto',
+  exito: 'bg-exito-tinte text-exito',
+  info: 'bg-info-tinte text-info-texto',
+};
+export function Confirmar({
+  abierto,
+  onCerrar,
+  onConfirmar,
+  titulo,
+  children,
+  icono = 'help',
+  tono = 'peligro',
+  textoConfirmar = 'Confirmar',
+  iconoConfirmar,
+  varianteConfirmar = 'peligro',
+  textoCancelar = 'Cancelar',
+  cargando = false,
+}) {
+  return (
+    <Modal abierto={abierto} onCerrar={() => !cargando && onCerrar()}>
+      <div className="p-6">
+        <span className={`size-12 rounded-full grid place-items-center mb-4 ${TONOS_CONFIRMAR[tono]}`}>
+          <Icono nombre={icono} className="text-[24px]" />
+        </span>
+        <h2 className="font-titulo text-lg font-semibold text-texto break-words">{titulo}</h2>
+        {children && <div className="text-sm text-texto-2 mt-1">{children}</div>}
+        <div className="flex justify-end gap-2 mt-6">
+          <Boton variante="secundario" onClick={onCerrar} disabled={cargando}>
+            {textoCancelar}
+          </Boton>
+          <Boton variante={varianteConfirmar} icono={iconoConfirmar} cargando={cargando} onClick={onConfirmar}>
+            {textoConfirmar}
+          </Boton>
+        </div>
+      </div>
+    </Modal>
   );
 }
