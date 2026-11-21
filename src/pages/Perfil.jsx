@@ -16,6 +16,7 @@ import Icono from '../components/Icono';
 import { Aviso, Avatar, Boton, Campo, Entrada, Esqueleto, Estado, Insignia, Interruptor, Modal, Pestanas, Segmentado, Selector, Tarjeta, TituloPagina, Vacio } from '../components/ui';
 import Contador from '../components/Contador';
 import DosPasos from '../components/DosPasos';
+import VerificarTelefono from '../components/VerificarTelefono';
 import { hayCambios, restablecerPreferencias, usePreferencias } from '../utils/preferencias';
 import { listarEspacios } from '../api/catalogos';
 import { descargarIcs } from '../utils/calendario';
@@ -227,6 +228,8 @@ function MiInformacion({ mensaje, onMensaje }) {
             </Campo>
             <Campo etiqueta="Teléfono" error={errores.telefono} ayuda="10 dígitos, sin espacios.">
               <Entrada icono="call" name="telefono" inputMode="numeric" value={form.telefono} onChange={cambiar} error={errores.telefono} />
+              {/* Demo de SMS: solo con el telefono ya guardado (si lo esta cambiando, primero que guarde) */}
+              {form.telefono === (perfil.telefono ?? '') && <VerificarTelefono />}
             </Campo>
             <Campo etiqueta={doc.etiqueta} ayuda="Es tu usuario; solo el administrador lo cambia.">
               <Entrada icono="badge" value={doc.valor} disabled className="bg-lienzo" />
