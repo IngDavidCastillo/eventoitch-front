@@ -22,9 +22,10 @@ const MENU = [
   { a: '/agenda', texto: 'Agenda de espacios', icono: 'calendar_month' },
   { a: '/reservas', texto: 'Reservas', icono: 'event_available' },
   { a: '/usuarios', texto: 'Usuarios', icono: 'group', roles: ['ADMINISTRADOR'] },
+  { a: '/categorias', texto: 'Categorías', icono: 'sell', roles: ['ADMINISTRADOR', 'ORGANIZADOR'] },
 ];
 
-const TITULOS = { '/panel': 'Panel principal', '/agenda': 'Agenda', '/reservas': 'Reservas', '/usuarios': 'Usuarios', '/perfil': 'Mi perfil' };
+const TITULOS = { '/panel': 'Panel principal', '/agenda': 'Agenda', '/reservas': 'Reservas', '/usuarios': 'Usuarios', '/perfil': 'Mi perfil', '/categorias': 'Categorías' };
 
 function MenuLateral({ onNueva }) {
   const { sesion, cerrarSesion } = useAuth();
