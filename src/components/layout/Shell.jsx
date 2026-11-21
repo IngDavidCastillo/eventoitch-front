@@ -219,6 +219,25 @@ function AyudaAtajos({ abierta, onCerrar }) {
   );
 }
 
+// ADMINISTRADOR u ORGANIZADOR sin la verificacion en dos pasos: el backend les responde 403 DOS_PASOS_REQUERIDO
+// al crear reservas o en las secciones de administrador. Este aviso los lleva a activarla (no sale en Mi perfil).
+function AvisoDosPasos() {
+  const { sesion } = useAuth();
+  const { pathname } = useLocation();
+  if (!sesion?.requiereActivarDosPasos || pathname.startsWith('/perfil')) return null;
+  return (
+    <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-aviso-borde bg-aviso-tinte px-4 py-3 text-sm text-texto">
+      <Icono nombre="phonelink_lock" className="text-[20px] text-aviso-texto" />
+      <p className="flex-1 min-w-[220px]">
+        <b>Activa la verificación en dos pasos.</b> Tu rol la necesita para crear y mover reservas{sesion.rol === 'ADMINISTRADOR' ? ' y para las secciones de administrador' : ''}.
+      </p>
+      <Link to="/perfil?pestana=seguridad" className="font-semibold text-marino hover:underline">
+        Activarla ahora
+      </Link>
+    </div>
+  );
+}
+
 export default function Shell({ children }) {
   // Al cambiar de pantalla, el contenido entra con una animacion suave (key en <main>)
   const { pathname } = useLocation();
@@ -237,6 +256,7 @@ export default function Shell({ children }) {
         <div className="lg:pl-[260px] flex flex-col min-h-screen pb-16 lg:pb-0">
           <BarraSuperior />
           <main key={pathname} className="aparecer flex-1 w-full max-w-[1440px] mx-auto px-4 md:px-8 py-6 md:py-8">
+            <AvisoDosPasos />
             {children}
           </main>
           <PieInstitucional />

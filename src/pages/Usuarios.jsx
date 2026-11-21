@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import useDatos from '../hooks/useDatos';
 import { actualizarUsuario, cambiarEstado, listarUsuarios, marcarCorreoVerificado, reenviarCodigoDe, subirFoto } from '../api/usuarios';
-import { correoNoEnviado, enviarEnlaceRestablecer, registroAdmin, restablecerPassword } from '../api/auth';
+import { correoNoEnviado, enviarEnlaceRestablecer, quitarDosPasos, registroAdmin, restablecerPassword } from '../api/auth';
 import Icono from '../components/Icono';
-import { Aviso, Avatar, Boton, Insignia, SelectorFoto, Campo, Entrada, Estado, ErrorServicio, EsqueletoTabla, Modal, Panel, Pestanas, Selector, Tarjeta, TituloPagina, Vacio } from '../components/ui';
+import { Aviso, Avatar, Boton, Confirmar, Insignia, SelectorFoto, Campo, Entrada, Estado, ErrorServicio, EsqueletoTabla, Modal, Panel, Pestanas, Selector, Tarjeta, TituloPagina, Vacio } from '../components/ui';
 import { TIPOS, documento, nombreCompleto, nombreTipo, telefono } from '../utils/formato';
 
 const CON_RFC = ['DOCENTE', 'ADMINISTRADOR', 'ORGANIZADOR'];
@@ -403,6 +403,8 @@ export default function Usuarios() {
   const [mensaje, setMensaje] = useState(null);
   const [restablecer, setRestablecer] = useState(null);
   const [cambiarTipo, setCambiarTipo] = useState(null);
+  // Quitar la verificacion en dos pasos a quien perdio el celular y sus codigos de respaldo
+  const [sinDosPasos, setSinDosPasos] = useState(null);
 
   const todos = useMemo(() => datos.datos ?? [], [datos.datos]);
   const cuentas = useMemo(() => {
@@ -453,6 +455,20 @@ export default function Usuarios() {
       setMensaje({ tipo: 'error', texto: err.message });
     } finally {
       setTrabajando(false);
+    }
+  }
+
+  async function quitar2fa() {
+    const u = sinDosPasos;
+    setTrabajando(true);
+    try {
+      await quitarDosPasos(u.id, sesion.token);
+      setMensaje({ tipo: 'exito', texto: `Se le quitó la verificación en dos pasos a ${nombreCompleto(u)} y se cerró su sesión. Le llegó un aviso por correo; al entrar tendrá que activarla otra vez si su rol la necesita.` });
+    } catch (err) {
+      setMensaje({ tipo: err.status === 409 ? 'aviso' : 'error', texto: err.message });
+    } finally {
+      setTrabajando(false);
+      setSinDosPasos(null);
     }
   }
 
@@ -561,6 +577,9 @@ export default function Usuarios() {
                             <Boton variante="fantasma" tamano="sm" icono="key" onClick={() => setRestablecer(u)} title="Restablecer contraseña">
                               Contraseña
                             </Boton>
+                            <Boton variante="fantasma" tamano="sm" icono="phonelink_erase" onClick={() => setSinDosPasos(u)} title="Quitar la verificación en dos pasos (perdió su celular)">
+                              2FA
+                            </Boton>
                             <Boton variante={u.estado === 'ACTIVO' ? 'fantasma' : 'secundario'} tamano="sm" icono={u.estado === 'ACTIVO' ? 'person_off' : 'person_check'} onClick={() => setConfirmar(u)}>
                               {u.estado === 'ACTIVO' ? 'Desactivar' : 'Activar'}
                             </Boton>
@@ -618,6 +637,19 @@ export default function Usuarios() {
           setMensaje({ tipo: 'exito', texto: `Le enviamos a ${nombreCompleto(u)} un enlace por correo para que ponga su contraseña (vence en 15 minutos).` });
         }}
       />
+
+      <Confirmar
+        abierto={!!sinDosPasos}
+        onCerrar={() => setSinDosPasos(null)}
+        onConfirmar={quitar2fa}
+        cargando={trabajando}
+        icono="phonelink_erase"
+        tono="aviso"
+        titulo={sinDosPasos ? `Quitar la verificación en dos pasos a ${nombreCompleto(sinDosPasos)}` : ''}
+        textoConfirmar="Quitarla"
+      >
+        Úsalo solo si perdió su celular y sus códigos de respaldo, y ya confirmaste que es esa persona. Se cerrará su sesión y le llegará un correo de aviso.
+      </Confirmar>
 
       <Modal abierto={!!confirmar} onCerrar={() => !trabajando && setConfirmar(null)}>
         {confirmar && (

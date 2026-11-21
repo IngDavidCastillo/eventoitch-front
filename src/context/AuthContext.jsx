@@ -42,19 +42,29 @@ export function AuthProvider({ children }) {
     setPerfil(null);
   }, []);
 
-  // Si la contrasena es temporal (la restablecio un ADMINISTRADOR), el backend responde 202
-  // { requiereCambioPassword } sin token: se devuelve eso a la pantalla de login para que pida la nueva.
+  // El backend responde 202 sin token cuando falta algo: { requiereCambioPassword } si la contrasena es temporal
+  // (la restablecio un ADMINISTRADOR) o { requiereDosPasos, desafio } si la cuenta tiene verificacion en dos pasos.
+  // Eso se devuelve a la pantalla de login para que pida lo que falta.
+  const pendiente = (r) => r?.requiereCambioPassword || r?.requiereDosPasos;
+
   async function iniciarSesion(username, password, recordar) {
     const r = await authApi.login(username, password);
-    if (r?.requiereCambioPassword) return r;
+    if (pendiente(r)) return r;
     abrir(r, recordar);
     return null;
   }
 
-  // Cambia la contrasena temporal por una propia; el backend responde el token y se abre la sesion
+  // Cambia la contrasena temporal por una propia; el backend responde el token (o el desafio del 2FA)
   async function cambiarPasswordTemporal(username, temporal, nueva, recordar) {
     const r = await authApi.cambiarPasswordTemporal(username, temporal, nueva);
+    if (r?.requiereDosPasos) return r;
     abrir(r, recordar);
+    return null;
+  }
+
+  // Segundo paso del login: el codigo de la app de autenticacion (o uno de respaldo) con el desafio
+  async function completarDosPasos(desafio, codigo, recordar) {
+    abrir(await authApi.loginDosPasos(desafio, codigo), recordar);
   }
 
   // Registro publico: si hay que confirmar el correo (requiereVerificarEmail) no viene token y no se abre sesion;
@@ -69,7 +79,7 @@ export function AuthProvider({ children }) {
   // (con el token, para subir la foto del registro).
   async function entrarConCorreoVerificado(username, password, recordar = false) {
     const r = await authApi.login(username, password);
-    if (r?.requiereCambioPassword) return r;
+    if (pendiente(r)) return r;
     abrir(r, recordar);
     return r;
   }
@@ -79,6 +89,10 @@ export function AuthProvider({ children }) {
       token: r.token,
       usuarioId: r.usuarioId,
       rol: r.rol,
+      // dosPasos: entro con el codigo del 2FA. requiereActivarDosPasos: su rol lo tiene obligatorio y no lo ha
+      // activado (sin el, crear reservas y las secciones de administrador responden 403 DOS_PASOS_REQUERIDO)
+      dosPasos: !!r.dosPasos,
+      requiereActivarDosPasos: !!r.requiereActivarDosPasos,
       recordar,
       iniciadaEn: Date.now(),
       expiraEn: Date.now() + r.expiraEnSegundos * 1000,
@@ -154,6 +168,7 @@ export function AuthProvider({ children }) {
         recargarPerfil,
         iniciarSesion,
         cambiarPasswordTemporal,
+        completarDosPasos,
         registrarse,
         entrarConCorreoVerificado,
         cerrarSesion,
