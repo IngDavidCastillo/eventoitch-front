@@ -65,15 +65,3 @@ export function reenviarCodigoDe(id, token) {
 export function marcarCorreoVerificado(id, token) {
   return pedir(`${BASE}/${id}/verificar-correo`, { metodo: 'PATCH', token });
 }
-
-// ---------- Demo de SMS: verificar el telefono con Twilio Verify (solo el dueno del perfil) ----------
-
-// POST /{id}/telefono/codigo -> 202; 400 sin telefono; 429 (1 cada 60 s, 5 al dia); 503 si el SMS no esta activo
-export function pedirCodigoTelefono(id, token) {
-  return pedir(`${BASE}/${id}/telefono/codigo`, { metodo: 'POST', token });
-}
-
-// POST /{id}/telefono/verificar { codigo } -> el usuario con telefonoVerificado true; 400 si no coincide o vencio
-export function verificarTelefono(id, codigo, token) {
-  return pedir(`${BASE}/${id}/telefono/verificar`, { metodo: 'POST', cuerpo: { codigo }, token });
-}
