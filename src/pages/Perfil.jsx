@@ -16,6 +16,7 @@ import Icono from '../components/Icono';
 import { Aviso, Avatar, Boton, Campo, Entrada, Esqueleto, Estado, Insignia, Interruptor, Modal, Pestanas, Segmentado, Selector, Tarjeta, TituloPagina, Vacio } from '../components/ui';
 import Contador from '../components/Contador';
 import DosPasos from '../components/DosPasos';
+import LlavesAcceso from '../components/LlavesAcceso';
 import { hayCambios, restablecerPreferencias, usePreferencias } from '../utils/preferencias';
 import { listarEspacios } from '../api/catalogos';
 import { descargarIcs } from '../utils/calendario';
@@ -550,6 +551,7 @@ function Seguridad() {
       </form>
 
       <DosPasos />
+      <LlavesAcceso />
       <ActividadReciente />
     </div>
   );
@@ -563,6 +565,7 @@ const RESULTADOS = {
   CUENTA_INACTIVA: { texto: 'Cuenta inactiva', tono: 'neutro', icono: 'person_off' },
   EMAIL_NO_VERIFICADO: { texto: 'Correo sin confirmar', tono: 'aviso', icono: 'mark_email_unread' },
   DOS_PASOS_INCORRECTO: { texto: 'Código de la app incorrecto', tono: 'aviso', icono: 'phonelink_lock' },
+  LLAVE_ACCESO: { texto: 'Entró con llave de acceso', tono: 'exito', icono: 'passkey' },
   DOS_PASOS_RESPALDO: { texto: 'Entró con código de respaldo', tono: 'info', icono: 'password' },
 };
 

@@ -101,3 +101,36 @@ export function desactivarDosPasos(password, codigo, token) {
 export function quitarDosPasos(usuarioId, token) {
   return pedir(`${BASE}/admin/usuarios/${usuarioId}/dos-pasos`, { metodo: 'DELETE', token });
 }
+
+// ---------- Llaves de acceso (passkeys / WebAuthn, contrato seccion 8) ----------
+// Las opciones { solicitud, publicKey } se le pasan al navegador con @simplewebauthn/browser.
+
+// POST /login/llave/opciones (publico) -> { solicitud, publicKey }
+export function opcionesLoginLlave() {
+  return pedir(`${BASE}/login/llave/opciones`, { metodo: 'POST' });
+}
+
+// POST /login/llave (publico) -> igual que el login, con dosPasos: true
+export function loginLlave(solicitud, credencial) {
+  return pedir(`${BASE}/login/llave`, { metodo: 'POST', cuerpo: { solicitud, credencial } });
+}
+
+// GET /llaves -> [{ id, nombre, fechaCreacion, ultimoUso }]
+export function misLlaves(token) {
+  return pedir(`${BASE}/llaves`, { token });
+}
+
+// POST /llaves/opciones { password } -> { solicitud, publicKey }; 400 contrasena mala; 403 si falta el segundo paso
+export function opcionesNuevaLlave(password, token) {
+  return pedir(`${BASE}/llaves/opciones`, { metodo: 'POST', cuerpo: { password }, token });
+}
+
+// POST /llaves { solicitud, credencial, nombre } -> 201 { id, nombre, ... }
+export function crearLlave(solicitud, credencial, nombre, token) {
+  return pedir(`${BASE}/llaves`, { metodo: 'POST', cuerpo: { solicitud, credencial, nombre: nombre || null }, token });
+}
+
+// DELETE /llaves/{id} -> 204
+export function borrarLlave(id, token) {
+  return pedir(`${BASE}/llaves/${id}`, { metodo: 'DELETE', token });
+}

@@ -9,6 +9,7 @@ import Marca from '../components/layout/Marca';
 import BotonTema from '../components/BotonTema';
 import LadoInstitucional from './LadoInstitucional';
 import VerificarCorreo from '../components/VerificarCorreo';
+import { soportaLlaves } from '../utils/llavesAcceso';
 
 // Contrasena temporal (la restablecio un ADMINISTRADOR): hay que poner una propia antes de entrar.
 // Se manda la temporal (la que se acaba de escribir) y la nueva a POST /auth/password/temporal, que da el token.
@@ -177,7 +178,8 @@ function PasoCambio({ aviso, username, temporal, recordar, onListo, onCancelar, 
 }
 
 export default function Login() {
-  const { sesion, iniciarSesion, cierre, setCierre } = useAuth();
+  const { sesion, iniciarSesion, entrarConLlave, cierre, setCierre } = useAuth();
+  const [conLlave, setConLlave] = useState(false);
   // Contrasena temporal: el backend pide cambiarla antes de dar el token (respuesta 202)
   const [cambio, setCambio] = useState(null);
   // Correo sin confirmar (403 EMAIL_NO_VERIFICADO): { mensaje, password } para pedir el codigo y luego entrar
@@ -230,6 +232,21 @@ export default function Login() {
       );
     } finally {
       setEnviando(false);
+    }
+  }
+
+  // Llave de acceso: sin usuario ni contrasena. Cuenta como verificacion en dos pasos.
+  async function entrarLlave() {
+    setConLlave(true);
+    setError(null);
+    try {
+      await entrarConLlave(form.recordar);
+      setCierre(null);
+      navigate(preferencia('inicio'), { replace: true });
+    } catch (err) {
+      setError({ titulo: 'No se pudo entrar con la llave', texto: err.message });
+    } finally {
+      setConLlave(false);
     }
   }
 
@@ -358,9 +375,19 @@ export default function Login() {
               <input type="checkbox" name="recordar" checked={form.recordar} onChange={cambiar} className="size-[18px] accent-marino" />
               Mantener sesión iniciada en este equipo
             </label>
-            <Boton type="submit" tamano="lg" cargando={enviando} className="w-full">
+            <Boton type="submit" tamano="lg" cargando={enviando} disabled={conLlave} className="w-full">
               {enviando ? 'Verificando...' : 'Iniciar sesión'}
             </Boton>
+            {soportaLlaves() && (
+              <>
+                <div className="flex items-center gap-3 text-xs text-tenue">
+                  <span className="h-px flex-1 bg-borde" />o<span className="h-px flex-1 bg-borde" />
+                </div>
+                <Boton type="button" variante="secundario" tamano="lg" icono="fingerprint" cargando={conLlave} disabled={enviando} onClick={entrarLlave} className="w-full">
+                  {conLlave ? 'Esperando tu huella...' : 'Entrar con llave de acceso'}
+                </Boton>
+              </>
+            )}
           </form>
           )}
 
