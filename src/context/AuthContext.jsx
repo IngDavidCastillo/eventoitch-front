@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import * as authApi from '../api/auth';
 import { obtenerUsuario } from '../api/usuarios';
 import { escuchar } from '../api/cliente';
+import { firmarConLlave } from '../utils/llavesAcceso';
 
 const AuthContext = createContext(null);
 const CLAVE = 'eventoitch.sesion';
@@ -65,6 +66,14 @@ export function AuthProvider({ children }) {
   // Segundo paso del login: el codigo de la app de autenticacion (o uno de respaldo) con el desafio
   async function completarDosPasos(desafio, codigo, recordar) {
     abrir(await authApi.loginDosPasos(desafio, codigo), recordar);
+  }
+
+  // Entrar con llave de acceso: sin usuario ni contrasena; el navegador pide la huella/rostro/PIN.
+  // Cuenta como verificacion en dos pasos (el token trae dosPasos: true).
+  async function entrarConLlave(recordar) {
+    const { solicitud, publicKey } = await authApi.opcionesLoginLlave();
+    const credencial = await firmarConLlave(publicKey);
+    abrir(await authApi.loginLlave(solicitud, credencial), recordar);
   }
 
   // Registro publico: si hay que confirmar el correo (requiereVerificarEmail) no viene token y no se abre sesion;
@@ -169,6 +178,7 @@ export function AuthProvider({ children }) {
         iniciarSesion,
         cambiarPasswordTemporal,
         completarDosPasos,
+        entrarConLlave,
         registrarse,
         entrarConCorreoVerificado,
         cerrarSesion,
