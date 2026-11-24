@@ -5,6 +5,7 @@ import Icono from '../components/Icono';
 import Marca from '../components/layout/Marca';
 import EscudoITCH from '../components/layout/EscudoITCH';
 import BotonTema from '../components/BotonTema';
+import EventosPublicos from '../components/EventosPublicos';
 
 const ESPACIOS = [
   { icono: 'theater_comedy', titulo: 'Auditorios', texto: 'Congresos, conferencias y ceremonias.' },
@@ -27,6 +28,7 @@ export default function Inicio() {
         <div className="max-w-6xl mx-auto px-4 md:px-6 h-16 flex items-center gap-6">
           <Marca />
           <nav className="hidden md:flex items-center gap-6 text-sm text-texto-2 ml-6">
+            <a href="#eventos" className="hover:text-texto">Eventos</a>
             <a href="#espacios" className="hover:text-texto">Espacios</a>
             <a href="#como-funciona" className="hover:text-texto">Cómo funciona</a>
           </nav>
@@ -94,6 +96,8 @@ export default function Inicio() {
           </div>
         </div>
       </section>
+
+      <EventosPublicos />
 
       <section id="espacios" className="bg-lienzo border-y border-borde">
         <div className="max-w-6xl mx-auto px-4 md:px-6 py-14">
