@@ -45,6 +45,9 @@ const ESTADOS = {
   INACTIVO: ['peligro', 'Inactivo'],
   RESERVADA: ['info', 'Reservada'],
   LIBERADA: ['neutro', 'Liberada'],
+  // Solo visuales (utils/fechas.js estadoVisible): en ms-agenda siguen RESERVADA
+  EN_CURSO: ['exito', 'En curso'],
+  CONCLUIDA: ['neutro', 'Concluida'],
   DISPONIBLE: ['exito', 'Disponible'],
   MANTENIMIENTO: ['aviso', 'Mantenimiento'],
   PROGRAMADO: ['info', 'Programado'],

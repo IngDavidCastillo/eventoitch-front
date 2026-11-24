@@ -21,7 +21,7 @@ import { hayCambios, restablecerPreferencias, usePreferencias } from '../utils/p
 import { listarEspacios } from '../api/catalogos';
 import { descargarIcs } from '../utils/calendario';
 import { ROLES_QUE_RESERVAN, documento, folio, nombreCompleto, nombreEspacio, nombreEvento, nombreTipo } from '../utils/formato';
-import { fechaCorta, haceCuanto, horas, hoyIso, lunesDe, sumarDias } from '../utils/fechas';
+import { estadoVisible, fechaCorta, haceCuanto, horas, hoyIso, lunesDe, sumarDias } from '../utils/fechas';
 import { TIPOS_FOTO, prepararFoto } from '../utils/imagen';
 
 // ---------- Tarjeta de presentacion ----------
@@ -801,7 +801,7 @@ function MisReservas() {
                     </button>
                   </div>
                   <div className="flex items-center gap-2 ml-auto">
-                    <Estado valor={r.estado} />
+                    <Estado valor={estadoVisible(r)} />
                     <button
                       type="button"
                       onClick={() => descargarIcs([r], d.espacios, d.eventos, `${folio(r)}.ics`)}
