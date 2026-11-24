@@ -8,6 +8,8 @@ const CAMPOS = {
   nombre: { invalido: /[^\p{L}\p{N} .,#()/&'-]/gu, max: 100, mensaje: `El nombre no admite ese carácter. ${SIGNOS_NOMBRE}` },
   descripcion: { invalido: /[^\p{L}\p{N} .,;:()¿?¡!"'#%&+/_-]/gu, max: 255, mensaje: `La descripción no admite ese carácter. ${SIGNOS_TEXTO}` },
   ubicacion: { invalido: /[^\p{L}\p{N} .,#()/&'-]/gu, max: 150, mensaje: `La ubicación no admite ese carácter. ${SIGNOS_NOMBRE}` },
+  // Titulo de un evento (ms-eventos): mismos signos que la descripcion, para permitir "Taller: React" o "¿Qué es IA?"
+  titulo: { invalido: /[^\p{L}\p{N} .,;:()¿?¡!"'#%&+/_-]/gu, max: 100, mensaje: `El título no admite ese carácter. ${SIGNOS_TEXTO}` },
 };
 
 // Capacidad de un espacio (ms-espacios): numero entero de 5 a 10000

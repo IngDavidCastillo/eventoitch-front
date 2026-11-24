@@ -119,6 +119,9 @@
   background-color: var(--color-superficie);
   color: var(--color-texto);
 }
+/* En modo claro con Windows en oscuro, la lista nativa salia negra con texto oscuro
+   (index.html permite "light dark"): en claro se fija el esquema claro. */
+:root[data-tema="claro"] { color-scheme: light; }
 
 html { -webkit-font-smoothing: antialiased; }
 body { background: var(--color-lienzo); color: var(--color-texto); }

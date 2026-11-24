@@ -19,6 +19,7 @@ const Usuarios = lazy(() => import('./pages/Usuarios'));
 const Perfil = lazy(() => import('./pages/Perfil'));
 const Categorias = lazy(() => import('./pages/Categorias'));
 const Espacios = lazy(() => import('./pages/Espacios'));
+const Eventos = lazy(() => import('./pages/Eventos'));
 const NoEncontrado = lazy(() => import('./pages/NoEncontrado'));
 
 const privada = (pagina, roles) => (
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/perfil" element={privada(<Perfil />)} />
         <Route path="/categorias" element={privada(<Categorias />, ['ADMINISTRADOR', 'ORGANIZADOR'])} />
         <Route path="/espacios" element={privada(<Espacios />, ['ADMINISTRADOR', 'ORGANIZADOR'])} />
+        <Route path="/eventos" element={privada(<Eventos />)} />
         <Route path="*" element={<NoEncontrado />} />
       </Routes>
       </Suspense>

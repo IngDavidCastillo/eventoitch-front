@@ -461,8 +461,13 @@ export function Globo({ texto, children, className = '', lado = 'arriba' }) {
 }
 
 // ---------- Formularios: ayuda, contador, sección y área de texto ----------
-// Línea de ayuda con ícono (para el `ayuda` de Campo): tono 'info' o 'aviso'
-const TONOS_AYUDA = { info: ['info', 'text-info-texto'], aviso: ['warning', 'text-aviso-texto'] };
+// Línea de ayuda con ícono (para el `ayuda` de Campo): tono 'info', 'aviso', 'exito' o 'peligro'
+const TONOS_AYUDA = {
+  info: ['info', 'text-info-texto'],
+  aviso: ['warning', 'text-aviso-texto'],
+  exito: ['check_circle', 'text-exito-texto'],
+  peligro: ['error', 'text-peligro-texto'],
+};
 export function LineaAyuda({ tono = 'info', children }) {
   const [icono, color] = TONOS_AYUDA[tono];
   return (
