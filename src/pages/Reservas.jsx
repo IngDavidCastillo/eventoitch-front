@@ -232,7 +232,8 @@ export default function Reservas() {
       ) : pestana === 'evento' ? (
         <div className="escalonado space-y-4">
           {agrupar('eventoId').map(([id, rs]) => {
-            const vivas = rs.filter((r) => r.estado === 'RESERVADA').length;
+            // Al cancelar todo el evento ms-agenda solo libera las que no han empezado (las pasadas si se llevaron a cabo)
+            const porEmpezar = rs.filter((r) => estadoVisible(r) === 'RESERVADA').length;
             const pendientes = rs.filter((r) => r.estado === 'RESERVADA' && !yaConcluyo(r)).length;
             return (
               <Grupo
@@ -244,8 +245,8 @@ export default function Reservas() {
                 {...comunes}
                 accion={
                   puede &&
-                  pendientes > 0 && (
-                    <Boton variante="peligro" tamano="sm" icono="event_busy" onClick={() => setConfirmar({ tipo: 'evento', eventoId: id, cuantas: vivas })}>
+                  porEmpezar > 0 && (
+                    <Boton variante="peligro" tamano="sm" icono="event_busy" onClick={() => setConfirmar({ tipo: 'evento', eventoId: id, cuantas: porEmpezar })}>
                       Liberar todas
                     </Boton>
                   )
