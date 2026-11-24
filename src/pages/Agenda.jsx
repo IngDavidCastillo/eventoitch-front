@@ -11,7 +11,7 @@ import Icono from '../components/Icono';
 import { Aviso, Boton, Estado, ErrorServicio, Esqueleto, Modal, Segmentado, Tarjeta } from '../components/ui';
 import { MARGEN_MINUTOS, ROLES_QUE_RESERVAN, folio, nombreEspacio, nombreEvento } from '../utils/formato';
 import { preferencia } from '../utils/preferencias';
-import { aIso, deIso, diaSemana, diasEntre, fechaCorta, fechaLarga, hoyIso, lunesDe, minutos, nombreMes, rangoSemana, sumarDias } from '../utils/fechas';
+import { aIso, deIso, diaSemana, diasEntre, fechaCorta, fechaLarga, hoyIso, lunesDe, minutos, nombreMes, rangoSemana, sumarDias, estadoVisible, yaConcluyo } from '../utils/fechas';
 
 const INICIO = 7; // 07:00
 const FIN = 21; // 21:00
@@ -98,11 +98,12 @@ function Bloque({ r, espacios, eventos, onClick, compacto }) {
   const top = ((minutos(r.horaInicio) - INICIO * 60) / 60) * ALTO;
   const alto = Math.max(((minutos(r.horaFin) - minutos(r.horaInicio)) / 60) * ALTO - 3, 22);
   const liberada = r.estado === 'LIBERADA';
+  const concluida = yaConcluyo(r);
   return (
     <button
       onClick={() => onClick(r)}
       style={{ top, height: alto, borderLeftColor: liberada ? 'var(--color-tenue)' : borde, background: liberada ? 'var(--color-borde-suave)' : fondo }}
-      className={`aparecer absolute left-1 right-1 rounded-md border border-borde border-l-[3px] px-1.5 py-1 text-left overflow-hidden hover:shadow-md hover:-translate-y-px transition-[box-shadow,translate] ${liberada ? 'rayado' : ''}`}
+      className={`aparecer absolute left-1 right-1 rounded-md border border-borde border-l-[3px] px-1.5 py-1 text-left overflow-hidden hover:shadow-md hover:-translate-y-px transition-[box-shadow,translate] ${liberada ? 'rayado' : ''} ${concluida ? 'opacity-60' : ''}`}
     >
       <p className={`text-[11px] font-semibold leading-tight truncate ${liberada ? 'text-texto-2 line-through' : 'text-texto'}`}>{nombreEvento(eventos, r.eventoId)}</p>
       {!compacto && alto > 34 && <p className="text-[10px] text-texto-2 truncate">{nombreEspacio(espacios, r.espacioId)}</p>}
@@ -140,7 +141,7 @@ function Detalle({ r, datos, puede, onCerrar, onMover, onLiberado }) {
           <div>
             <div className="flex flex-wrap gap-2">
               <span className="font-mono text-[11px] text-texto-2">{folio(r)}</span>
-              <Estado valor={r.estado} />
+              <Estado valor={estadoVisible(r)} />
             </div>
             <h3 className="font-titulo text-xl font-semibold text-texto mt-2">{nombreEvento(datos.eventos, r.eventoId)}</h3>
           </div>
@@ -169,7 +170,7 @@ function Detalle({ r, datos, puede, onCerrar, onMover, onLiberado }) {
             {error}
           </Aviso>
         )}
-        {puede && r.estado === 'RESERVADA' && (
+        {puede && r.estado === 'RESERVADA' && !yaConcluyo(r) && (
           <div className="mt-5 flex gap-2 justify-end">
             <Boton variante="secundario" icono="open_with" onClick={onMover}>
               Mover

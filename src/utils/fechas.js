@@ -74,3 +74,24 @@ export function haceCuanto(fechaHora) {
   if (h < 24) return `hace ${h} h`;
   return `hace ${Math.round(h / 24)} d`;
 }
+
+// "Ahora" con la hora de Mexico (America/Mexico_City), la misma que usa ms-agenda, aunque la compu tenga otra zona.
+export function ahoraMexico() {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const p = Object.fromEntries(partes.map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
+
+// Estado que se MUESTRA de una reserva. Solo es visual: en ms-agenda sigue RESERVADA, asi no cambia el contrato
+// ni lo que se le avisa a ms-asistencia. RESERVADA que ya termino -> CONCLUIDA; la que esta pasando -> EN_CURSO.
+export function estadoVisible(r, ahora = ahoraMexico()) {
+  if (r.estado !== 'RESERVADA') return r.estado;
+  if (ahora >= `${r.fecha} ${r.horaFin.slice(0, 5)}`) return 'CONCLUIDA';
+  if (ahora >= `${r.fecha} ${r.horaInicio.slice(0, 5)}`) return 'EN_CURSO';
+  return 'RESERVADA';
+}
+
+// Ya paso: no tiene sentido moverla ni liberarla
+export const yaConcluyo = (r) => estadoVisible(r) === 'CONCLUIDA';

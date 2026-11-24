@@ -12,7 +12,7 @@ import { listarUsuarios } from '../api/usuarios';
 import Icono from '../components/Icono';
 import { Aviso, Boton, Esqueleto, EsqueletoTabla, Estado, ErrorServicio, EncabezadoTarjeta, Tarjeta, Vacio, Avatar } from '../components/ui';
 import { ROLES_QUE_RESERVAN, documento, folio, nombreCompleto, nombreEspacio, nombreEvento, nombreTipo, saludo } from '../utils/formato';
-import { fechaCorta, fechaLarga, haceCuanto, horas, hoyIso, lunesDe, sumarDias } from '../utils/fechas';
+import { estadoVisible, fechaCorta, fechaLarga, haceCuanto, horas, hoyIso, lunesDe, sumarDias } from '../utils/fechas';
 
 const HORAS_HABILES = 40; // 8 h x 5 dias, como en el diseno
 
@@ -138,7 +138,7 @@ function UltimasReservas({ reservas, espacios, eventos }) {
                   <td className="px-3 py-3">{nombreEspacio(espacios, r.espacioId)}</td>
                   <td className="px-3 py-3">{nombreEvento(eventos, r.eventoId)}</td>
                   <td className="px-3 py-3">
-                    <Estado valor={r.estado} />
+                    <Estado valor={estadoVisible(r)} />
                   </td>
                   <td className="px-5 py-3 text-right text-xs text-texto-2 whitespace-nowrap">{haceCuanto(r.fechaCreacion)}</td>
                 </tr>
@@ -301,7 +301,7 @@ export default function Panel() {
                         <span className="flex items-center gap-1 tabular"><Icono nombre="schedule" className="text-[16px]" />{r.horaInicio} – {r.horaFin}</span>
                       </p>
                     </div>
-                    <Estado valor={r.estado} />
+                    <Estado valor={estadoVisible(r)} />
                   </li>
                 ))}
               </ul>

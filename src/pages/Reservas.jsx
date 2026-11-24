@@ -9,7 +9,7 @@ import { liberarEvento, liberarReserva } from '../api/agenda';
 import Icono from '../components/Icono';
 import { Aviso, Boton, Entrada, Estado, ErrorServicio, EsqueletoTabla, Modal, Pestanas, Selector, Tarjeta, TituloPagina, Vacio } from '../components/ui';
 import { ROLES_QUE_RESERVAN, folio, nombreEspacio, nombreEvento } from '../utils/formato';
-import { diasEntre, fechaCorta, hoyIso, lunesDe, sumarDias } from '../utils/fechas';
+import { diasEntre, estadoVisible, fechaCorta, hoyIso, lunesDe, sumarDias, yaConcluyo } from '../utils/fechas';
 import { preferencia } from '../utils/preferencias';
 
 const RANGOS = [
@@ -30,10 +30,10 @@ function Fila({ r, d, puede, onMover, onLiberar }) {
         {r.horaInicio} – {r.horaFin}
       </td>
       <td className="px-3 py-3">
-        <Estado valor={r.estado} />
+        <Estado valor={estadoVisible(r)} />
       </td>
       <td className="px-5 py-3 text-right whitespace-nowrap">
-        {puede && r.estado === 'RESERVADA' && (
+        {puede && r.estado === 'RESERVADA' && !yaConcluyo(r) && (
           <div className="inline-flex gap-1">
             <button onClick={() => onMover(r)} title="Mover" className="size-8 grid place-items-center rounded-md text-texto-2 hover:bg-borde-suave hover:text-marino">
               <Icono nombre="edit_calendar" className="text-[18px]" />
@@ -118,7 +118,7 @@ export default function Reservas() {
     return d.reservas.filter(
       (r) =>
         (!espacio || String(r.espacioId) === espacio) &&
-        (!estado || r.estado === estado) &&
+        (!estado || estadoVisible(r) === estado) &&
         (!t || folio(r).toLowerCase().includes(t) || nombreEvento(d.eventos, r.eventoId).toLowerCase().includes(t)),
     );
   }, [d, espacio, estado, texto]);
@@ -149,7 +149,7 @@ export default function Reservas() {
   }
 
   const comunes = { d, puede, onMover: (r) => abrir(r), onLiberar: (r) => setConfirmar({ tipo: 'reserva', r }) };
-  const activas = d ? d.reservas.filter((r) => r.estado === 'RESERVADA').length : 0;
+  const activas = d ? d.reservas.filter((r) => r.estado === 'RESERVADA' && !yaConcluyo(r)).length : 0;
 
   return (
     <>
@@ -192,6 +192,8 @@ export default function Reservas() {
           <Selector value={estado} onChange={(e) => setEstado(e.target.value)} aria-label="Estado">
             <option value="">Todos los estados</option>
             <option value="RESERVADA">Reservada</option>
+            <option value="EN_CURSO">En curso</option>
+            <option value="CONCLUIDA">Concluida</option>
             <option value="LIBERADA">Liberada</option>
           </Selector>
         </div>
@@ -230,19 +232,21 @@ export default function Reservas() {
       ) : pestana === 'evento' ? (
         <div className="escalonado space-y-4">
           {agrupar('eventoId').map(([id, rs]) => {
-            const vivas = rs.filter((r) => r.estado === 'RESERVADA').length;
+            // Al cancelar todo el evento ms-agenda solo libera las que no han empezado (las pasadas si se llevaron a cabo)
+            const porEmpezar = rs.filter((r) => estadoVisible(r) === 'RESERVADA').length;
+            const pendientes = rs.filter((r) => r.estado === 'RESERVADA' && !yaConcluyo(r)).length;
             return (
               <Grupo
                 key={id}
                 icono="event"
                 titulo={nombreEvento(d.eventos, id)}
-                subtitulo={`${rs.length} reservas · ${vivas} activas`}
+                subtitulo={`${rs.length} reservas · ${pendientes} activas`}
                 lista={rs}
                 {...comunes}
                 accion={
                   puede &&
-                  vivas > 0 && (
-                    <Boton variante="peligro" tamano="sm" icono="event_busy" onClick={() => setConfirmar({ tipo: 'evento', eventoId: id, cuantas: vivas })}>
+                  porEmpezar > 0 && (
+                    <Boton variante="peligro" tamano="sm" icono="event_busy" onClick={() => setConfirmar({ tipo: 'evento', eventoId: id, cuantas: porEmpezar })}>
                       Liberar todas
                     </Boton>
                   )
