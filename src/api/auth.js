@@ -63,3 +63,74 @@ export function enviarEnlaceRestablecer(usuarioId, token) {
 export function restablecerConEnlace(token, passwordNueva) {
   return pedir(`${BASE}/password/restablecer`, { metodo: 'POST', cuerpo: { token, passwordNueva } });
 }
+
+// ---------- Verificacion en dos pasos (2FA con app de autenticacion, contrato seccion 8) ----------
+// El login responde 202 { requiereDosPasos, desafio, message } si la cuenta la tiene activa.
+
+// POST /login/dos-pasos (publico) -> igual que el login, con dosPasos: true
+export function loginDosPasos(desafio, codigo) {
+  return pedir(`${BASE}/login/dos-pasos`, { metodo: 'POST', cuerpo: { desafio, codigo } });
+}
+
+// GET /dos-pasos -> { activo, obligatorio, codigosRestantes, sesionConDosPasos }
+export function estadoDosPasos(token) {
+  return pedir(`${BASE}/dos-pasos`, { token });
+}
+
+// POST /dos-pasos/iniciar -> { secreto, otpauthUrl } (todavia no queda activo)
+export function iniciarDosPasos(token) {
+  return pedir(`${BASE}/dos-pasos/iniciar`, { metodo: 'POST', token });
+}
+
+// POST /dos-pasos/activar { codigo } -> { codigosRespaldo: [...] } (solo se ven esta vez)
+export function activarDosPasos(codigo, token) {
+  return pedir(`${BASE}/dos-pasos/activar`, { metodo: 'POST', cuerpo: { codigo }, token });
+}
+
+// POST /dos-pasos/codigos { codigo } -> 10 codigos de respaldo nuevos (los anteriores dejan de servir)
+export function nuevosCodigosRespaldo(codigo, token) {
+  return pedir(`${BASE}/dos-pasos/codigos`, { metodo: 'POST', cuerpo: { codigo }, token });
+}
+
+// DELETE /dos-pasos { password, codigo } -> 204 (no se puede si el rol lo tiene obligatorio)
+export function desactivarDosPasos(password, codigo, token) {
+  return pedir(`${BASE}/dos-pasos`, { metodo: 'DELETE', cuerpo: { password, codigo }, token });
+}
+
+// DELETE /admin/usuarios/{id}/dos-pasos (ADMINISTRADOR) -> 204; 409 si esa cuenta no lo tiene activo
+export function quitarDosPasos(usuarioId, token) {
+  return pedir(`${BASE}/admin/usuarios/${usuarioId}/dos-pasos`, { metodo: 'DELETE', token });
+}
+
+// ---------- Llaves de acceso (passkeys / WebAuthn, contrato seccion 8) ----------
+// Las opciones { solicitud, publicKey } se le pasan al navegador con @simplewebauthn/browser.
+
+// POST /login/llave/opciones (publico) -> { solicitud, publicKey }
+export function opcionesLoginLlave() {
+  return pedir(`${BASE}/login/llave/opciones`, { metodo: 'POST' });
+}
+
+// POST /login/llave (publico) -> igual que el login, con dosPasos: true
+export function loginLlave(solicitud, credencial) {
+  return pedir(`${BASE}/login/llave`, { metodo: 'POST', cuerpo: { solicitud, credencial } });
+}
+
+// GET /llaves -> [{ id, nombre, fechaCreacion, ultimoUso }]
+export function misLlaves(token) {
+  return pedir(`${BASE}/llaves`, { token });
+}
+
+// POST /llaves/opciones { password } -> { solicitud, publicKey }; 400 contrasena mala; 403 si falta el segundo paso
+export function opcionesNuevaLlave(password, token) {
+  return pedir(`${BASE}/llaves/opciones`, { metodo: 'POST', cuerpo: { password }, token });
+}
+
+// POST /llaves { solicitud, credencial, nombre } -> 201 { id, nombre, ... }
+export function crearLlave(solicitud, credencial, nombre, token) {
+  return pedir(`${BASE}/llaves`, { metodo: 'POST', cuerpo: { solicitud, credencial, nombre: nombre || null }, token });
+}
+
+// DELETE /llaves/{id} -> 204
+export function borrarLlave(id, token) {
+  return pedir(`${BASE}/llaves/${id}`, { metodo: 'DELETE', token });
+}

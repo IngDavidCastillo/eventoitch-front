@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import * as authApi from '../api/auth';
 import { obtenerUsuario } from '../api/usuarios';
 import { escuchar } from '../api/cliente';
+import { firmarConLlave } from '../utils/llavesAcceso';
 
 const AuthContext = createContext(null);
 const CLAVE = 'eventoitch.sesion';
@@ -42,25 +43,53 @@ export function AuthProvider({ children }) {
     setPerfil(null);
   }, []);
 
-  // Si la contrasena es temporal (la restablecio un ADMINISTRADOR), el backend responde 202
-  // { requiereCambioPassword } sin token: se devuelve eso a la pantalla de login para que pida la nueva.
+  // El backend responde 202 sin token cuando falta algo: { requiereCambioPassword } si la contrasena es temporal
+  // (la restablecio un ADMINISTRADOR) o { requiereDosPasos, desafio } si la cuenta tiene verificacion en dos pasos.
+  // Eso se devuelve a la pantalla de login para que pida lo que falta.
+  const pendiente = (r) => r?.requiereCambioPassword || r?.requiereDosPasos;
+
   async function iniciarSesion(username, password, recordar) {
     const r = await authApi.login(username, password);
-    if (r?.requiereCambioPassword) return r;
+    if (pendiente(r)) return r;
     abrir(r, recordar);
     return null;
   }
 
-  // Cambia la contrasena temporal por una propia; el backend responde el token y se abre la sesion
+  // Cambia la contrasena temporal por una propia; el backend responde el token (o el desafio del 2FA)
   async function cambiarPasswordTemporal(username, temporal, nueva, recordar) {
     const r = await authApi.cambiarPasswordTemporal(username, temporal, nueva);
+    if (r?.requiereDosPasos) return r;
     abrir(r, recordar);
+    return null;
   }
 
-  // Registro publico: el backend responde igual que el login, asi que la sesion queda abierta
+  // Segundo paso del login: el codigo de la app de autenticacion (o uno de respaldo) con el desafio
+  async function completarDosPasos(desafio, codigo, recordar) {
+    abrir(await authApi.loginDosPasos(desafio, codigo), recordar);
+  }
+
+  // Entrar con llave de acceso: sin usuario ni contrasena; el navegador pide la huella/rostro/PIN.
+  // Cuenta como verificacion en dos pasos (el token trae dosPasos: true).
+  async function entrarConLlave(recordar) {
+    const { solicitud, publicKey } = await authApi.opcionesLoginLlave();
+    const credencial = await firmarConLlave(publicKey);
+    abrir(await authApi.loginLlave(solicitud, credencial), recordar);
+  }
+
+  // Registro publico: si hay que confirmar el correo (requiereVerificarEmail) no viene token y no se abre sesion;
+  // la pantalla de registro pide el codigo y despues entra con entrarConCorreoVerificado().
   async function registrarse(datos) {
     const r = await authApi.registro(datos);
-    abrir(r, false);
+    if (r?.token) abrir(r, false);
+    return r;
+  }
+
+  // Despues de confirmar el correo: inicia sesion con lo que la persona ya escribio y regresa la respuesta
+  // (con el token, para subir la foto del registro).
+  async function entrarConCorreoVerificado(username, password, recordar = false) {
+    const r = await authApi.login(username, password);
+    if (pendiente(r)) return r;
+    abrir(r, recordar);
     return r;
   }
 
@@ -69,6 +98,10 @@ export function AuthProvider({ children }) {
       token: r.token,
       usuarioId: r.usuarioId,
       rol: r.rol,
+      // dosPasos: entro con el codigo del 2FA. requiereActivarDosPasos: su rol lo tiene obligatorio y no lo ha
+      // activado (sin el, crear reservas y las secciones de administrador responden 403 DOS_PASOS_REQUERIDO)
+      dosPasos: !!r.dosPasos,
+      requiereActivarDosPasos: !!r.requiereActivarDosPasos,
       recordar,
       iniciadaEn: Date.now(),
       expiraEn: Date.now() + r.expiraEnSegundos * 1000,
@@ -144,7 +177,10 @@ export function AuthProvider({ children }) {
         recargarPerfil,
         iniciarSesion,
         cambiarPasswordTemporal,
+        completarDosPasos,
+        entrarConLlave,
         registrarse,
+        entrarConCorreoVerificado,
         cerrarSesion,
         olvidarSesion,
         inactividad,

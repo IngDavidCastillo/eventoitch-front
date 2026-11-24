@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { correoNoEnviado } from '../api/auth';
+import VerificarCorreo from '../components/VerificarCorreo';
 import { subirFoto } from '../api/usuarios';
 import Icono from '../components/Icono';
 import { Aviso, Boton, Campo, Entrada, SelectorFoto } from '../components/ui';
@@ -60,7 +61,7 @@ const NIVELES = [
 ];
 
 export default function Registro() {
-  const { sesion, registrarse, setPerfil } = useAuth();
+  const { sesion, registrarse, entrarConCorreoVerificado, setPerfil } = useAuth();
   const navigate = useNavigate();
   const [paso, setPaso] = useState(0);
   const [form, setForm] = useState({ tipoUsuario: 'ESTUDIANTE', nombre: '', apellidos: '', numeroControl: '', email: '', telefono: '', password: '', confirmar: '', acepto: false });
@@ -73,6 +74,8 @@ export default function Registro() {
   // Foto opcional: se sube a ms-usuarios en cuanto se crea la cuenta (ya con su token)
   const [foto, setFoto] = useState(null);
   const [avisoFoto, setAvisoFoto] = useState(null);
+  // La cuenta ya se creo pero falta confirmar el correo con el codigo: { emailEnmascarado } (sin sesion todavia)
+  const [porVerificar, setPorVerificar] = useState(null);
   const vista = useMemo(() => (foto ? URL.createObjectURL(foto) : null), [foto]);
   useEffect(() => () => vista && URL.revokeObjectURL(vista), [vista]);
   // Al crear la cuenta la sesion se abre sola; esto evita saltar al panel antes de ver el mensaje de exito
@@ -107,6 +110,24 @@ export default function Registro() {
     return !Object.keys(x).length;
   }
 
+  // La foto opcional del registro se sube en cuanto hay token
+  async function guardarFoto(r) {
+    if (!foto || !r?.usuarioId || !r?.token) return;
+    try {
+      setPerfil(await subirFoto(r.usuarioId, foto, r.token));
+    } catch (err) {
+      setAvisoFoto(`Tu cuenta se creó, pero la foto no se pudo guardar: ${err.message}. Puedes subirla después en Mi perfil.`);
+    }
+  }
+
+  // Correo confirmado: se entra con lo que ya escribio y se sube la foto
+  async function alConfirmarCorreo() {
+    const r = await entrarConCorreoVerificado(usuario.trim(), form.password);
+    await guardarFoto(r);
+    setAvisoCorreo(null);
+    setPorVerificar(null);
+  }
+
   async function crear() {
     if (!validarSeguridad()) return;
     setEnviando(true);
@@ -123,12 +144,11 @@ export default function Registro() {
         password: form.password,
       });
       setAvisoCorreo(r?.avisoCorreo ?? null);
-      if (foto && r?.usuarioId) {
-        try {
-          setPerfil(await subirFoto(r.usuarioId, foto, r.token));
-        } catch (err) {
-          setAvisoFoto(`Tu cuenta se creó, pero la foto no se pudo guardar: ${err.message}. Puedes subirla después en Mi perfil.`);
-        }
+      if (r?.requiereVerificarEmail) {
+        // Sin token hasta confirmar el correo; la foto se sube despues de confirmarlo
+        setPorVerificar({ emailEnmascarado: r.emailEnmascarado });
+      } else {
+        await guardarFoto(r);
       }
       setPaso(3);
     } catch (err) {
@@ -321,7 +341,23 @@ export default function Registro() {
             </>
           )}
 
-          {paso === 3 && (
+          {paso === 3 && porVerificar && (
+            <>
+              {avisoCorreo && correoNoEnviado(avisoCorreo) && (
+                <Aviso tipo="aviso" className="mb-2">
+                  {avisoCorreo}. Pide al administrador que confirme tu correo.
+                </Aviso>
+              )}
+              <VerificarCorreo
+                usuario={usuario.trim()}
+                emailEnmascarado={porVerificar.emailEnmascarado}
+                textoListo="Confirmar correo"
+                onListo={alConfirmarCorreo}
+              />
+            </>
+          )}
+
+          {paso === 3 && !porVerificar && (
             <div className="text-center py-4">
               <span className="mx-auto size-16 rounded-full bg-exito-tinte text-exito grid place-items-center">
                 <Icono nombre="check_circle" className="text-[36px]" relleno />

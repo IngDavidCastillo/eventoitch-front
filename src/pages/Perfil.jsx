@@ -1,8 +1,9 @@
 // Mi perfil: tarjeta de presentacion (foto, nombre, rol, documento) con lo que falta por llenar,
 // pestanas "Mi informacion" (PUT /usuarios/{id} con el perfil completo + lo que puede hacer su rol),
 // "Preferencias" (lectura, atajos, agenda y reservas; solo en este navegador, ver utils/preferencias.js) y "Seguridad"
-// (PUT /auth/password), y "Mis reservas" (GET /reservas/mias) con resumen y descarga al calendario.
+// (PUT /auth/password, verificacion en dos pasos y actividad reciente), y "Mis reservas" (GET /reservas/mias) con resumen y descarga al calendario.
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { actualizarUsuario, quitarFoto, subirFoto } from '../api/usuarios';
 import { cambiarPassword, misAccesos } from '../api/auth';
@@ -14,11 +15,13 @@ import { ATAJOS, useNuevaReserva } from '../components/layout/Shell';
 import Icono from '../components/Icono';
 import { Aviso, Avatar, Boton, Campo, Entrada, Esqueleto, Estado, Insignia, Interruptor, Modal, Pestanas, Segmentado, Selector, Tarjeta, TituloPagina, Vacio } from '../components/ui';
 import Contador from '../components/Contador';
+import DosPasos from '../components/DosPasos';
+import LlavesAcceso from '../components/LlavesAcceso';
 import { hayCambios, restablecerPreferencias, usePreferencias } from '../utils/preferencias';
 import { listarEspacios } from '../api/catalogos';
 import { descargarIcs } from '../utils/calendario';
 import { ROLES_QUE_RESERVAN, documento, folio, nombreCompleto, nombreEspacio, nombreEvento, nombreTipo } from '../utils/formato';
-import { fechaCorta, haceCuanto, horas, hoyIso, lunesDe, sumarDias } from '../utils/fechas';
+import { estadoVisible, fechaCorta, haceCuanto, horas, hoyIso, lunesDe, sumarDias } from '../utils/fechas';
 import { TIPOS_FOTO, prepararFoto } from '../utils/imagen';
 
 // ---------- Tarjeta de presentacion ----------
@@ -547,6 +550,8 @@ function Seguridad() {
         </Tarjeta>
       </form>
 
+      <DosPasos />
+      <LlavesAcceso />
       <ActividadReciente />
     </div>
   );
@@ -558,6 +563,10 @@ const RESULTADOS = {
   PASSWORD_INCORRECTA: { texto: 'Contraseña incorrecta', tono: 'aviso', icono: 'password' },
   CUENTA_BLOQUEADA: { texto: 'Cuenta bloqueada', tono: 'peligro', icono: 'lock' },
   CUENTA_INACTIVA: { texto: 'Cuenta inactiva', tono: 'neutro', icono: 'person_off' },
+  EMAIL_NO_VERIFICADO: { texto: 'Correo sin confirmar', tono: 'aviso', icono: 'mark_email_unread' },
+  DOS_PASOS_INCORRECTO: { texto: 'Código de la app incorrecto', tono: 'aviso', icono: 'phonelink_lock' },
+  LLAVE_ACCESO: { texto: 'Entró con llave de acceso', tono: 'exito', icono: 'passkey' },
+  DOS_PASOS_RESPALDO: { texto: 'Entró con código de respaldo', tono: 'info', icono: 'password' },
 };
 
 const fechaHora = new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
@@ -792,7 +801,7 @@ function MisReservas() {
                     </button>
                   </div>
                   <div className="flex items-center gap-2 ml-auto">
-                    <Estado valor={r.estado} />
+                    <Estado valor={estadoVisible(r)} />
                     <button
                       type="button"
                       onClick={() => descargarIcs([r], d.espacios, d.eventos, `${folio(r)}.ics`)}
@@ -843,7 +852,9 @@ function MisReservas() {
 
 export default function Perfil() {
   const { sesion } = useAuth();
-  const [pestana, setPestana] = useState('info');
+  // ?pestana=seguridad abre directo la de Seguridad (lo usa el aviso de activar la verificacion en dos pasos)
+  const [params] = useSearchParams();
+  const [pestana, setPestana] = useState(() => (params.get('pestana') === 'seguridad' ? 'seguridad' : 'info'));
   const [mensaje, setMensaje] = useState(null);
   const reserva = ROLES_QUE_RESERVAN.includes(sesion?.rol);
   return (

@@ -9,7 +9,7 @@ import Icono from '../components/Icono';
 import { Aviso, Boton, Campo, Entrada, Esqueleto, Estado, Interruptor, Panel, Selector } from '../components/ui';
 import { MARGEN_MINUTOS, folio, iconoEspacio, nombreEspacio, tipoEspacio } from '../utils/formato';
 import { cambiarPreferencia, preferencia } from '../utils/preferencias';
-import { diasEntre, fechaCorta, horas, hoyIso, minutos } from '../utils/fechas';
+import { diasEntre, estadoVisible, fechaCorta, horas, hoyIso, minutos } from '../utils/fechas';
 
 const RAPIDOS = [
   { texto: '1 h', dur: 60 },
@@ -223,7 +223,7 @@ export default function NuevaReserva({ abierta, inicial, onCerrar, onCreada }) {
               <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
                 <span className="font-mono text-xs text-texto-2">{folio(r)}</span>
                 <span className="tabular">{fechaCorta(r.fecha)}</span>
-                <Estado valor={r.estado} />
+                <Estado valor={estadoVisible(r)} />
               </li>
             ))}
           </ul>
