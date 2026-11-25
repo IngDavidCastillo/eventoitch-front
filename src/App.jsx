@@ -7,6 +7,8 @@ import { Route, Routes } from 'react-router-dom';
 import RutaPrivada from './components/RutaPrivada';
 import VigilanteSesion from './components/VigilanteSesion';
 import Shell, { CargandoPagina } from './components/layout/Shell';
+import AbrirReservaPendiente from './components/AbrirReservaPendiente';
+import MoverEventoEnAgenda from './components/MoverEventoEnAgenda';
 import Inicio from './pages/Inicio';
 import Login from './pages/Login';
 
@@ -19,6 +21,7 @@ const Usuarios = lazy(() => import('./pages/Usuarios'));
 const Perfil = lazy(() => import('./pages/Perfil'));
 const Categorias = lazy(() => import('./pages/Categorias'));
 const Espacios = lazy(() => import('./pages/Espacios'));
+const Eventos = lazy(() => import('./pages/Eventos'));
 const NoEncontrado = lazy(() => import('./pages/NoEncontrado'));
 
 const privada = (pagina, roles) => (
@@ -38,12 +41,13 @@ export default function App() {
         <Route path="/restablecer" element={<Restablecer />} />
         <Route path="/panel" element={privada(<Panel />)} />
         <Route path="/dashboard" element={privada(<Panel />)} />
-        <Route path="/agenda" element={privada(<Agenda />)} />
+        <Route path="/agenda" element={privada(<MoverEventoEnAgenda><AbrirReservaPendiente /><Agenda /></MoverEventoEnAgenda>)} />
         <Route path="/reservas" element={privada(<Reservas />)} />
         <Route path="/usuarios" element={privada(<Usuarios />, ['ADMINISTRADOR'])} />
         <Route path="/perfil" element={privada(<Perfil />)} />
         <Route path="/categorias" element={privada(<Categorias />, ['ADMINISTRADOR', 'ORGANIZADOR'])} />
         <Route path="/espacios" element={privada(<Espacios />, ['ADMINISTRADOR', 'ORGANIZADOR'])} />
+        <Route path="/eventos" element={privada(<Eventos />)} />
         <Route path="*" element={<NoEncontrado />} />
       </Routes>
       </Suspense>
