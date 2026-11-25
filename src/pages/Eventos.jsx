@@ -1,29 +1,26 @@
 // Eventos (ms-eventos): lista con fechas, busqueda por titulo o por lugar, filtros y detalle para cualquier usuario con sesion.
-// El ORGANIZADOR (en sus eventos) y el ADMINISTRADOR ademas pueden registrar (de uno o varios dias), editar, reprogramar,
-// cambiar de espacio, poner en riesgo, mantener, cancelar y finalizar. Todo pasa por ms-eventos, que mueve las reservas
-// en la agenda de David y cambia el estado del evento (flujo del clima del PDF: Clima avisa y el organizador decide).
+// El ORGANIZADOR (en sus eventos) y el ADMINISTRADOR ademas registran (solo los datos del evento), editan, cancelan, finalizan y
+// deciden ante el clima (EN_RIESGO, MANTENIDO) por ms-eventos. Apartar lugar y fecha, reprogramar y cambiar de espacio llevan a
+// la Agenda de David (los dos ultimos, en un panel propio sobre ella: components/MoverEventoEnAgenda.jsx).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNuevaReserva } from '../components/layout/Shell';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import useDatos from '../hooks/useDatos';
 import {
   actualizarEvento,
   buscarEventos,
   cambiarEstadoEvento,
-  cambiarUbicacionEvento,
   crearEvento,
   listarEventos,
   obtenerEvento,
-  reprogramarEvento,
 } from '../api/eventos';
 import { listarCategorias } from '../api/categorias';
 import { listarEspacios } from '../api/espacios';
 import { listarUsuarios } from '../api/usuarios';
-import { consultarDisponibilidad, ocupacionDelDia } from '../api/agenda';
 import { corto, filtrarCampo, limpiarEspacios, primeraMayuscula, tieneLetra } from '../utils/validaciones';
-import { diasEntre, fechaCorta, fechaLarga, hoyIso, minutos, sumarDias } from '../utils/fechas';
-import { MARGEN_MINUTOS, tipoEspacio } from '../utils/formato';
+import { esVariosDias, hhmm, mensajeAmigable, nombreLugar, numeroDias, textoFechas, textoHorario } from '../utils/eventos';
+import { ahoraMexico, diasEntre, fechaCorta, fechaLarga, hoyIso, sumarDias } from '../utils/fechas';
 import Icono from '../components/Icono';
 import {
   AreaTexto,
@@ -40,7 +37,7 @@ import {
   EsqueletoTabla,
   Estado,
   Globo,
-  // Interruptor, (ya no se usa: el formulario no tiene "Varios dias")
+  Insignia,
   LineaAyuda,
   MenuDesplegable,
   Panel,
@@ -55,12 +52,12 @@ import {
 const MIN_TITULO = 3;
 const MAX_TITULO = 100;
 const MAX_DESCRIPCION = 255;
-const DIAS_MAXIMOS = 31; // misma regla que ms-eventos y la agenda
 const ROLES_QUE_ORGANIZAN = ['ORGANIZADOR', 'ADMINISTRADOR'];
 const TERMINADOS = ['CANCELADO', 'FINALIZADO'];
 const RESERVA = ' '; // linea de ayuda vacia del mismo alto (el formulario no "brinca")
 
 const ESTADOS_EVENTO = [
+  ['POR_PROGRAMAR', 'Por programar', 'pending_actions'], // solo visual: ver estadoVisible
   ['PROGRAMADO', 'Programado', 'event'],
   ['EN_RIESGO', 'En riesgo', 'warning'],
   ['MANTENIDO', 'Mantenido', 'verified'],
@@ -71,6 +68,9 @@ const ESTADOS_EVENTO = [
 ];
 // "Todos" / "Todas" (antes "Todos los estados"): la etiqueta ya dice "Estado:" y asi los filtros caben en un renglon
 const FILTRO_ESTADOS = [{ valor: '', texto: 'Todos', icono: 'apps' }, ...ESTADOS_EVENTO.map(([valor, texto, icono]) => ({ valor, texto, icono }))];
+
+// ESTUDIANTE e INVITADO solo consultan presentes y futuros: ms-eventos no les manda cancelados ni finalizados
+const FILTRO_ESTADOS_PUBLICO = FILTRO_ESTADOS.filter((o) => !TERMINADOS.includes(o.valor) && o.valor !== 'POR_PROGRAMAR');
 
 // "Proximos": primero los vigentes por fecha; los cancelados y finalizados, y los sin fecha (la agenda no respondio), al final
 const terminado = (e) => (TERMINADOS.includes(e.estado) ? 1 : 0);
@@ -99,380 +99,34 @@ function NombreOrganizador({ e }) {
   );
 }
 
-// Lugar del evento: el previsto o el de su reserva; un evento registrado sin lugar dice "Sin lugar definido"
-const nombreLugar = (e) => e?.espacioNombre ?? (e?.espacio ? `Espacio ${e.espacio}` : 'Sin lugar definido');
-
-// ---------- Fechas del evento ----------
-const esVariosDias = (e) => !!e?.fecha && !!e?.fechaFin && e.fechaFin !== e.fecha;
-const numeroDias = (e) => (esVariosDias(e) ? diasEntre(e.fecha, e.fechaFin).length : 1);
-const hhmm = (h) => (h ? h.slice(0, 5) : h);
-// Sin reserva vigente: el evento sigue en pie pero su reserva se libero fuera de Eventos (Reservas de la agenda)
-const textoFechas = (e) => (!e?.fecha ? (e?.reservaLiberada ? 'Sin reserva vigente' : 'Sin fecha') : esVariosDias(e) ? `${fechaCorta(e.fecha)} – ${fechaCorta(e.fechaFin)}` : fechaCorta(e.fecha));
-const textoHorario = (e) => (e?.horaInicio && e?.horaFin ? `${hhmm(e.horaInicio)} – ${hhmm(e.horaFin)}` : '');
-function horaActual() {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-// Los mensajes del servicio vienen sin acentos; para los casos conocidos se muestra uno claro (DISENO.md, "Textos")
-function mensajeAmigable(err) {
-  const m = err?.message ?? '';
-  // La agenda de David pide la verificacion en dos pasos (2FA) para apartar, mover o liberar espacios (403 DOS_PASOS_REQUERIDO)
-  if (err?.status === 403 && (err?.codigo === 'DOS_PASOS_REQUERIDO' || /dos pasos|DOS_PASOS/i.test(m)))
-    return 'Para apartar o mover espacios necesitas la verificación en dos pasos. Actívala en Mi perfil > Seguridad y vuelve a iniciar sesión con tu código o tu llave de acceso.';
-  if (err?.status === 403) return 'Solo el organizador del evento o un administrador puede modificarlo.';
-  if (err?.status === 503) return 'Un servicio no respondió (agenda, espacios o usuarios). Inténtalo de nuevo en unos segundos.';
-  if (err?.status === 409 && /reservado/i.test(m)) return `El espacio ya está ocupado en ese horario. ${m.replace(/^.*reservado/i, 'Reservado')}`;
-  // Casos que el formulario ya evita, pero que pueden pasar si otra persona cambia algo mientras está abierto
-  for (const [patron, texto] of TRADUCCIONES) {
-    const x = m.match(patron);
-    if (x) return typeof texto === 'function' ? texto(x) : texto;
-  }
-  return m || 'No se pudo completar. Inténtalo de nuevo.';
-}
-
-// Mensajes de ms-eventos (sin acentos y con datos tecnicos, como en las practicas) -> texto claro para la persona.
-// El servicio no cambia: sus mensajes siguen igual para Postman y para los demas servicios
-const TRADUCCIONES = [
-  [/esta (CANCELADO|FINALIZADO) y ya no se puede modificar/, (x) => `Este evento ya está ${x[1] === 'CANCELADO' ? 'cancelado' : 'finalizado'} (quizá lo cambió otra persona). Cierra y vuelve a abrirlo para ver su estado actual.`],
-  [/espacio no esta disponible \(estado: MANTENIMIENTO\)/, 'El espacio entró en mantenimiento. Elige otro espacio.'],
-  [/espacio no existe/, 'El espacio ya no está disponible (pudo darse de baja). Elige otro.'],
-  [/categoria no existe/, 'La categoría ya no está disponible (pudo darse de baja). Elige otra.'],
-  [/organizador no (existe|esta activo)|no es organizador/, 'El organizador elegido ya no está activo o ya no es organizador. Elige otro.'],
-  [/excede la capacidad del espacio \((\d+)\)/, (x) => `El cupo supera la capacidad del espacio (${Number(x[1]).toLocaleString('es-MX')} personas). Baja el cupo o elige otro espacio.`],
-  [/aun no empieza \(inicia el (\d{4}-\d{2}-\d{2}) a las (\d{2}:\d{2})/, (x) => `Aún no empieza: se puede finalizar desde el ${fechaCorta(x[1])} a las ${x[2]}.`],
-  [/dura varios dias/, 'Dura varios días: para cambiar sus fechas, cancélalo y regístralo de nuevo.'],
-  [/horario debe estar entre/, 'El horario debe estar entre 07:00 y 21:00.'],
-  [/fecha no puede estar en el pasado/, 'La fecha ya pasó. Elige una fecha de hoy en adelante.'],
-  [/no tiene una reserva vigente/, 'El evento no tiene una reserva vigente en la agenda, así que no se puede mover.'],
-  [/Solo un evento al aire libre/, 'Solo un evento al aire libre puede quedar en riesgo por el clima.'],
-  [/MANTENIDO cuando esta EN_RIESGO/, 'Solo se puede mantener un evento que está en riesgo.'],
-  [/ya esta en ese espacio/, 'El evento ya está en ese espacio.'],
-];
-
-// ---------- Ocupacion del espacio en la agenda de David: ¿cuando esta libre esos dias? ----------
-// La ocupacion se carga una vez por espacio y fechas (GET /reservas/espacio/{id}?fecha=, contrato v3) y se dibuja
-// como ayuda visual, con los horarios libres. Quien DECIDE si el horario choca es la agenda de David
-// (GET /reservas/disponibilidad, como en su Nueva reserva), y de su respuesta se toman los minutos de preparacion
-// (margenMinutos; MARGEN_MINUTOS de David solo es el respaldo). Al registrar, la agenda vuelve a revisar.
-// Horario de 07:00 a 21:00: regla de Eventos (tambien en ms-eventos), el mismo rango que dibuja la Agenda de David.
-const HORA_ABRE = '07:00';
-const HORA_CIERRA = '21:00';
-const ABRE = minutos(HORA_ABRE);
-const CIERRA = minutos(HORA_CIERRA);
-const aHora = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-// Hora actual redondeada a la siguiente media hora (para no ofrecer horas que ya pasaron)
-const ahoraRedondeada = () => Math.ceil(minutos(horaActual()) / 30) * 30;
-
-// ignorarEvento: al reprogramar, la reserva del mismo evento no cuenta como ocupada
-function useOcupacion({ espacioId, dias, ignorarEvento = null, token }) {
-  const clave = espacioId && dias.length ? `${espacioId}|${dias.join(',')}|${ignorarEvento ?? ''}` : '';
-  const [resultado, setResultado] = useState({ clave: '', estado: 'listo', porDia: [] });
-  useEffect(() => {
-    if (!clave) return undefined;
-    let vigente = true;
-    // Pequena espera por si la fecha se esta escribiendo a mano
-    const reloj = setTimeout(async () => {
-      try {
-        const porDia = await Promise.all(
-          dias.map((fecha) =>
-            ocupacionDelDia(espacioId, fecha, token).then((lista) => ({
-              fecha,
-              reservas: (lista ?? [])
-                .filter((r) => r.estado !== 'LIBERADA' && (ignorarEvento == null || Number(r.eventoId) !== Number(ignorarEvento)))
-                .map((r) => ({ id: r.id, eventoId: r.eventoId, horaInicio: hhmm(r.horaInicio), horaFin: hhmm(r.horaFin) })),
-            })),
-          ),
-        );
-        if (vigente) setResultado({ clave, estado: 'listo', porDia });
-      } catch {
-        if (vigente) setResultado({ clave, estado: 'error', porDia: [] });
-      }
-    }, 250);
-    return () => {
-      vigente = false;
-      clearTimeout(reloj);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clave, token]);
-  if (!clave) return { estado: 'pendiente', porDia: [] };
-  return resultado.clave === clave ? resultado : { estado: 'cargando', porDia: [] };
-}
-
-// Reservas de todos los dias juntas: las de mismo horario se agrupan ("ocupado 2 de 3 dias")
-function agruparReservas(porDia) {
-  const grupos = new Map();
-  porDia.forEach(({ fecha, reservas }) =>
-    reservas.forEach((r) => {
-      const k = `${r.horaInicio}-${r.horaFin}`;
-      const g = grupos.get(k) ?? { ...r, fechas: [], eventos: new Set() };
-      g.fechas.push(fecha);
-      g.eventos.add(r.eventoId);
-      grupos.set(k, g);
-    }),
-  );
-  return [...grupos.values()].sort((a, b) => minutos(a.horaInicio) - minutos(b.horaInicio));
-}
-
-// Horarios libres (de 07:00 a 21:00) que sirven TODOS los dias: sin reservas, sin su preparacion y, si es hoy, sin horas pasadas
-function horariosLibres(porDia, hoyIncluido, margen) {
-  const tapados = porDia.flatMap(({ reservas }) => reservas.map((r) => [minutos(r.horaInicio) - margen, minutos(r.horaFin) + margen]));
-  if (hoyIncluido) tapados.push([ABRE, ahoraRedondeada()]);
-  tapados.sort((a, b) => a[0] - b[0]);
-  const libres = [];
-  let desde = ABRE;
-  tapados.forEach(([ini, fin]) => {
-    if (ini > desde) libres.push([desde, Math.min(ini, CIERRA)]);
-    desde = Math.max(desde, fin);
-  });
-  if (desde < CIERRA) libres.push([desde, CIERRA]);
-  return libres.filter(([a, b]) => b - a >= 30).map(([a, b]) => ({ desde: aHora(a), hasta: aHora(b) }));
-}
-
-// Reservas con las que choca el horario elegido; pegada = no se cruza, pero no deja el tiempo de preparacion
-function choquesDe(porDia, horaInicio, horaFin, margen) {
-  const ini = minutos(horaInicio);
-  const fin = minutos(horaFin);
-  return porDia.flatMap(({ fecha, reservas }) =>
-    reservas
-      .filter((r) => ini < minutos(r.horaFin) + margen && fin + margen > minutos(r.horaInicio))
-      .map((r) => ({ ...r, fecha, pegada: !(ini < minutos(r.horaFin) && fin > minutos(r.horaInicio)) })),
-  );
-}
-
-// La agenda de David dice si el horario choca esos dias (una consulta por dia, como en su Nueva reserva).
-// Mientras revisa se conserva el resultado anterior (no parpadea ni bloquea el boton); solo bloquea un choque confirmado
-function useDisponibilidad({ espacioId, dias, horaInicio, horaFin, ignorarEvento = null, activo, token }) {
-  const clave = activo && espacioId && dias.length && horaInicio && horaFin ? `${espacioId}|${dias.join(',')}|${horaInicio}|${horaFin}|${ignorarEvento ?? ''}` : '';
-  const [resultado, setResultado] = useState({ clave: '', estado: 'listo', choques: [], margen: null });
-  useEffect(() => {
-    if (!clave) return undefined;
-    let vigente = true;
-    const reloj = setTimeout(async () => {
-      try {
-        const respuestas = await Promise.all(
-          dias.map((fecha) => consultarDisponibilidad({ espacioId, fecha, horaInicio, horaFin }, token).then((r) => ({ fecha, r }))),
-        );
-        const margen = respuestas.find(({ r }) => r?.margenMinutos != null)?.r.margenMinutos ?? null;
-        const choques = respuestas.flatMap(({ fecha, r }) =>
-          (r?.conflictos ?? [])
-            .filter((c) => c.estado !== 'LIBERADA' && (ignorarEvento == null || Number(c.eventoId) !== Number(ignorarEvento)))
-            .map((c) => ({ id: c.id, eventoId: c.eventoId, fecha, horaInicio: hhmm(c.horaInicio), horaFin: hhmm(c.horaFin) })),
-        );
-        if (vigente) setResultado({ clave, estado: 'listo', choques, margen });
-      } catch {
-        if (vigente) setResultado((x) => ({ ...x, clave, estado: 'error', choques: [] }));
-      }
-    }, 300);
-    return () => {
-      vigente = false;
-      clearTimeout(reloj);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clave, token]);
-  if (!clave) return { estado: 'pendiente', choques: [], margen: resultado.margen, actual: false };
-  // actual = el resultado es del horario que se ve ahora; si no, es el anterior mientras llega el nuevo
-  return { ...resultado, estado: resultado.clave === clave ? resultado.estado : 'revisando', actual: resultado.clave === clave };
-}
-
-// Todo lo que el formulario necesita saber del horario elegido
-function useHorario({ espacioId, dias, horaInicio, horaFin, ignorarEvento, activo = true, token }) {
-  const ocupacion = useOcupacion({ espacioId, dias, ignorarEvento, token });
-  const revision = useDisponibilidad({ espacioId, dias, horaInicio, horaFin, ignorarEvento, activo, token });
-  // Antes: const margen = MARGEN_MINUTOS;
-  const margen = revision.margen ?? MARGEN_MINUTOS;
-  const hoyIncluido = dias.includes(hoyIso());
-  const horarioCompleto = !!horaInicio && !!horaFin && minutos(horaFin) > minutos(horaInicio);
-  const listo = ocupacion.estado === 'listo';
-  // Sin horario (por ejemplo, el panel de cambiar de espacio cerrado) no se calcula: minutos(undefined) rompia la pagina
-  const ini = horarioCompleto ? minutos(horaInicio) : 0;
-  const fin = horarioCompleto ? minutos(horaFin) : 0;
-  return {
-    ...ocupacion,
-    margen,
-    hoyIncluido,
-    grupos: listo ? agruparReservas(ocupacion.porDia) : [],
-    libres: listo ? horariosLibres(ocupacion.porDia, hoyIncluido, margen) : [],
-    // Estimacion para pintar la barra al instante (con el margen que dio la agenda)
-    // Antes tambien decidia el bloqueo: choques: listo && horarioCompleto ? choquesDe(...) : [],
-    estimados: listo && horarioCompleto ? choquesDe(ocupacion.porDia, horaInicio, horaFin, margen) : [],
-    // Lo que dice la agenda; pegada = no se cruza, pero no deja el tiempo de preparacion (como seCruza de David)
-    revision: revision.estado,
-    choques: horarioCompleto ? revision.choques.map((c) => ({ ...c, pegada: !(ini < minutos(c.horaFin) && fin > minutos(c.horaInicio)) })) : [],
-    // Solo bloquea un choque confirmado para el horario que se ve ahora
-    bloquea: revision.actual && revision.estado === 'listo' && revision.choques.length > 0,
-  };
-}
-
-// Errores de las fechas que se ven al momento (antes solo al pulsar Registrar; una fecha pasada escrita a mano
-// dejaba la barra diciendo "elige la fecha" sin explicar por que)
-function erroresFechas({ fecha, variosDias, fechaFin }) {
-  const x = {};
-  if (fecha && fecha < hoyIso()) x.fecha = 'La fecha ya pasó';
-  if (variosDias && fecha && fechaFin) {
-    if (fechaFin <= fecha) x.fechaFin = 'Debe ser después del primer día';
-    else if (diasEntre(fecha, fechaFin).length > DIAS_MAXIMOS) x.fechaFin = `Máximo ${DIAS_MAXIMOS} días`;
-  }
-  return x;
-}
-
-// Errores del horario que se ven al momento (sin esperar a Registrar)
-function erroresHorario({ fecha, horaInicio, horaFin }) {
-  const x = {};
-  if (!horaInicio || !horaFin) return x;
-  if (minutos(horaInicio) < ABRE || minutos(horaInicio) >= CIERRA) x.horaInicio = `Elige entre ${HORA_ABRE} y ${HORA_CIERRA}`;
-  else if (fecha === hoyIso() && minutos(horaInicio) <= minutos(horaActual())) x.horaInicio = 'Esa hora ya pasó';
-  if (minutos(horaFin) <= minutos(horaInicio)) x.horaFin = 'Debe ser después del inicio';
-  else if (minutos(horaFin) > CIERRA) x.horaFin = `Como máximo ${HORA_CIERRA}`;
-  return x;
-}
-
-// Barra del dia (07:00-21:00): ocupado en gris, preparacion rayada, horas pasadas atenuadas y el horario elegido en azul (rojo si choca)
-function OcupacionDia({ horario, horaInicio, horaFin, dias, titulos, onElegir, falta = 'Elige el espacio y la fecha para ver cuándo está libre.' }) {
-  const total = CIERRA - ABRE;
-  const pos = (m) => `${((Math.min(Math.max(m, ABRE), CIERRA) - ABRE) / total) * 100}%`;
-  const ancho = (a, b) => `${((Math.min(Math.max(b, ABRE), CIERRA) - Math.min(Math.max(a, ABRE), CIERRA)) / total) * 100}%`;
-  const nombre = (id) => titulos.get(Number(id)) ?? `Evento ${id}`;
-
-  if (horario.estado === 'pendiente') {
-    return (
-      <div className="rounded-lg border border-dashed border-borde p-3 text-center text-xs text-texto-2">{falta}</div>
-    );
-  }
-  if (horario.estado === 'error') {
-    return (
-      <Aviso tipo="aviso">No se pudo cargar la ocupación del espacio. Puedes registrar igual: la agenda revisa el horario al guardar.</Aviso>
-    );
-  }
-
-  const ini = horaInicio ? minutos(horaInicio) : 0;
-  const fin = horaFin ? minutos(horaFin) : 0;
-  const elegido = horaInicio && horaFin && fin > ini;
-  // En rojo si choca con otra reserva o cae en horas que ya pasaron
-  const choca = horario.estimados.length > 0 || (horario.hoyIncluido && ini <= minutos(horaActual()));
-  const varios = dias.length > 1;
-  const pasado = horario.hoyIncluido ? Math.min(ahoraRedondeada(), CIERRA) : ABRE;
-
+// ms-eventos guarda PROGRAMADO desde que se registra (lista de estados de la maestra); mientras no tenga lugar y fecha
+// apartados, en pantalla se lee "Por programar". Si reservaLiberada llega en null, la agenda no respondio: no se sabe
+const sinRespuestaAgenda = (e) => !e?.fecha && e?.reservaLiberada == null;
+const estadoVisible = (e) => (e.estado === 'PROGRAMADO' && !e.fecha && !sinRespuestaAgenda(e) ? 'POR_PROGRAMAR' : e.estado);
+function EstadoEvento({ e }) {
+  if (estadoVisible(e) !== 'POR_PROGRAMAR') return <Estado valor={e.estado} />;
   return (
-    <div className="rounded-lg border border-borde bg-lienzo p-3">
-      <div className="mb-2 flex items-center justify-between gap-2 text-xs">
-        <span className="font-medium text-texto">{varios ? `Ocupación de los ${dias.length} días` : 'Ocupación del día'}</span>
-        {horario.estado === 'cargando' && (
-          <span className="flex items-center gap-1 text-texto-2">
-            <span className="h-3 w-3 animate-spin rounded-full border-2 border-borde border-t-marino" />
-            Cargando...
-          </span>
-        )}
-      </div>
-
-      {/* Barra del dia */}
-      <div className={`relative h-9 overflow-hidden rounded-md border border-borde bg-superficie ${horario.estado === 'cargando' ? 'opacity-50' : ''}`}>
-        {pasado > ABRE && <div title="Horas que ya pasaron" className="rayado absolute inset-y-0 bg-borde-suave" style={{ left: 0, width: ancho(ABRE, pasado) }} />}
-        {horario.grupos.map((g) => {
-          const a = minutos(g.horaInicio);
-          const b = minutos(g.horaFin);
-          const quien = [...g.eventos].map(nombre).join(', ');
-          const cuando = varios ? ` (${g.fechas.length} de ${dias.length} días)` : '';
-          return (
-            <div key={`${g.horaInicio}-${g.horaFin}`}>
-              {horario.margen > 0 && (
-                <div
-                  title={`Preparación de la sala (${horario.margen} min)`}
-                  className="rayado absolute inset-y-0 border-x border-dashed border-borde"
-                  style={{ left: pos(a - horario.margen), width: ancho(a - horario.margen, b + horario.margen) }}
-                />
-              )}
-              <div
-                title={`Ocupado ${g.horaInicio} – ${g.horaFin}${cuando}: ${quien}`}
-                className="absolute inset-y-1 rounded bg-tenue/50"
-                style={{ left: pos(a), width: ancho(a, b) }}
-              />
-            </div>
-          );
-        })}
-        {elegido && (
-          <div
-            title={`Tu horario: ${horaInicio} – ${horaFin}`}
-            className={`absolute inset-y-0 rounded border-2 ${choca ? 'border-peligro bg-peligro/20' : 'border-marino bg-marino/20'}`}
-            style={{ left: pos(ini), width: ancho(ini, fin) }}
-          />
-        )}
-      </div>
-      {/* Horas de referencia */}
-      <div className="relative mt-1 h-4 text-[10px] text-tenue tabular">
-        {[7, 9, 11, 13, 15, 17, 19, 21].map((h) => (
-          <span key={h} className="absolute -translate-x-1/2 first:translate-x-0 last:-translate-x-full" style={{ left: pos(h * 60) }}>
-            {h}:00
-          </span>
-        ))}
-      </div>
-
-      {/* Horarios libres: al tocar uno se llenan las horas */}
-      {horario.estado === 'listo' && onElegir && (
-        <div className="mt-2">
-          <p className="mb-1.5 text-xs text-texto-2">
-            {horario.libres.length
-              ? `Horarios libres${varios ? ' todos los días' : ''} (toca uno para usarlo):`
-              : varios
-                ? 'No hay un horario libre que sirva todos los días. Prueba otras fechas u otro espacio.'
-                : 'No queda horario libre ese día. Prueba otra fecha u otro espacio.'}
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {horario.libres.map((l) => (
-              <button
-                key={l.desde}
-                type="button"
-                onClick={() => onElegir(l)}
-                className="rounded-full border border-exito-borde bg-exito-tinte px-2.5 py-1 text-xs font-medium text-exito-texto tabular hover:brightness-95"
-              >
-                {l.desde} – {l.hasta}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+    <Insignia tono="neutro" punto>
+      Por programar
+    </Insignia>
   );
 }
-
-// Resultado del horario elegido, debajo de las horas
-function LineaHorario({ horario, dias, titulos, sinErrores }) {
-  // Antes: if (horario.estado !== 'listo' || !sinErrores) return RESERVA;
-  if (!sinErrores || horario.revision === 'pendiente') return RESERVA;
-  if (horario.revision === 'error') return <LineaAyuda tono="aviso">No se pudo revisar con la agenda; se revisará al registrar.</LineaAyuda>;
-  // Mientras la agenda revisa el horario nuevo, el resultado anterior se ve atenuado (no parpadea)
-  if (horario.revision === 'revisando') return <span className="opacity-50">{lineaResultado(horario, dias, titulos)}</span>;
-  return lineaResultado(horario, dias, titulos);
+// Marca debajo del estado en la lista
+function marcaFecha(e) {
+  if (e.fecha || TERMINADOS.includes(e.estado)) return null;
+  if (sinRespuestaAgenda(e)) return 'Fecha no disponible';
+  if (e.reservaLiberada) return 'Sin reserva vigente';
+  return estadoVisible(e) === 'POR_PROGRAMAR' ? null : 'Sin fecha';
 }
 
-function lineaResultado(horario, dias, titulos) {
-  if (!horario.choques.length)
-    return <LineaAyuda tono="exito">{dias > 1 ? `El espacio está libre los ${dias} días en ese horario.` : 'El espacio está libre en ese horario.'}</LineaAyuda>;
-  const c = horario.choques[0];
-  // Con el titulo entre comillas; si no se conoce (evento de otra persona fuera de la lista), "otra reserva"
-  const titulo = titulos.get(Number(c.eventoId));
-  const quien = titulo ? `"${corto(titulo, 30)}"` : 'otra reserva';
-  const enDia = dias > 1 ? ` el ${fechaCorta(c.fecha)}` : '';
-  const mas = new Set(horario.choques.map((x) => x.fecha)).size - 1;
-  return (
-    <LineaAyuda tono="peligro">
-      {c.pegada
-        ? `Muy pegado a ${quien} (${c.horaInicio} – ${c.horaFin})${enDia}: se dejan ${horario.margen} min para preparar la sala.`
-        : `Choca con ${quien} (${c.horaInicio} – ${c.horaFin})${enDia}.`}
-      {mas > 0 ? ` También choca ${mas === 1 ? 'otro día' : `otros ${mas} días`}.` : ''}
-    </LineaAyuda>
-  );
-}
+// Ya empezo / ya termino segun su fecha y hora (hora de Mexico, como ms-eventos). Sin fecha no hay con que comparar
+const yaEmpezoEvento = (e) => !!e?.fecha && `${e.fecha} ${hhmm(e.horaInicio) ?? '00:00'}` <= ahoraMexico();
+const yaTerminoEvento = (e) => !!e?.fecha && `${e.fechaFin ?? e.fecha} ${hhmm(e.horaFin) ?? '23:59'}` <= ahoraMexico();
+const MOTIVO_YA_TERMINO = 'El evento ya se realizó: no se cancela, se finaliza.';
 
-// Al tocar un horario libre: empieza al inicio del hueco y conserva la duracion elegida (si cabe)
-function horasDesdeLibre(libre, horaInicio, horaFin) {
-  const dur = horaInicio && horaFin && minutos(horaFin) > minutos(horaInicio) ? minutos(horaFin) - minutos(horaInicio) : 120;
-  const ini = minutos(libre.desde);
-  return { horaInicio: libre.desde, horaFin: aHora(Math.min(ini + dur, minutos(libre.hasta))) };
-}
+// (23 nov 2026) Los paneles Reprogramar y Cambiar de espacio ahora se abren sobre la Agenda de David
+// (components/MoverEventoEnAgenda.jsx), para elegir viendo su calendario; la version anterior esta en el commit c52c48c.
 
-// Texto del espacio en los selectores: "Auditorio principal · Auditorio · 60 personas · techado"
-const textoEspacio = (e) => `${e.nombre} · ${tipoEspacio(e.tipo)} · ${Number(e.capacidad).toLocaleString('es-MX')} personas · ${e.esAlAireLibre ? 'al aire libre' : 'techado'}`;
 
 // ---------- Registrar o editar (panel lateral) ----------
 const VACIO = { titulo: '', descripcion: '', categoria: '', cupo: '', espacio: '', fecha: '', variosDias: false, fechaFin: '', horaInicio: '10:00', horaFin: '12:00', organizador: '' };
@@ -490,153 +144,6 @@ const deEvento = (e) => ({
   organizador: e.organizador != null ? String(e.organizador) : '',
 });
 
-// Antes (hasta el 22 nov 2026) la seccion 2 del formulario pedia espacio obligatorio, varios dias, fechas,
-// la barra de ocupacion y el horario, y ms-eventos apartaba la reserva al registrar:
-//         <SeccionFormulario numero={2} titulo="Lugar y fecha">
-//           {nueva ? (
-//             <div className="grid gap-3">
-//               <Campo
-//                 etiqueta="Espacio"
-//                 obligatorio
-//                 error={errores.espacio}
-//                 ayuda={
-//                   espacioSel ? (
-//                     <LineaAyuda tono="info">
-//                       {espacioSel.esAlAireLibre ? 'Al aire libre: Clima podrá marcar el evento en riesgo.' : 'Techado: el clima no afecta al evento.'}
-//                     </LineaAyuda>
-//                   ) : (
-//                     RESERVA
-//                   )
-//                 }
-//               >
-//                 <Selector className="h-11" value={form.espacio} onChange={(e) => cambiar('espacio', e.target.value)}>
-//                   <option value="">Elige el espacio...</option>
-//                   {/* El cupo va despues del espacio: ya no se deshabilitan espacios por el cupo escrito */}
-//                   {disponibles.map((e) => (
-//                     <option key={e.id} value={e.id}>
-//                       {textoEspacio(e)}
-//                     </option>
-//                   ))}
-//                 </Selector>
-//               </Campo>
-//               {campoCupo}
-//               {/* Primero si es de varios dias, luego las fechas; asi el formulario no cambia de forma despues */}
-//               <div className="flex items-center justify-between gap-3 rounded-lg border border-borde bg-lienzo px-4 py-3">
-//                 <span className="flex items-center gap-2 text-sm text-texto">
-//                   <Icono nombre="date_range" className="text-[20px] text-marino" />
-//                   <span>
-//                     <span className="font-medium">Varios días</span>
-//                     <span className="block text-xs text-texto-2">Mismo espacio y horario cada día (máximo {DIAS_MAXIMOS}).</span>
-//                   </span>
-//                 </span>
-//                 <Interruptor
-//                   activo={form.variosDias}
-//                   onChange={(v) => {
-//                     setForm((f) => ({ ...f, variosDias: v, fechaFin: v ? f.fechaFin : '' }));
-//                     setErrores((x) => ({ ...x, fechaFin: '' }));
-//                   }}
-//                   etiqueta="Varios días"
-//                 />
-//               </div>
-//               {/* Sin icono propio en fechas y horas: el navegador ya pone el suyo (antes salian dos) */}
-//               <div className="grid gap-3 sm:grid-cols-2">
-//                 <Campo etiqueta={form.variosDias ? 'Primer día' : 'Fecha'} obligatorio error={errorDe('fecha')} ayuda={RESERVA}>
-//                   <Entrada type="date" min={hoyIso()} value={form.fecha} onChange={(e) => cambiar('fecha', e.target.value)} error={errorDe('fecha')} />
-//                 </Campo>
-//                 {form.variosDias ? (
-//                   <Campo etiqueta="Último día" obligatorio error={errorDe('fechaFin')} ayuda={dias.length > 1 && fechasValidas ? <LineaAyuda tono="info">{dias.length} días.</LineaAyuda> : RESERVA}>
-//                     <Entrada
-//                       type="date"
-//                       min={form.fecha ? sumarDias(form.fecha, 1) : hoyIso()}
-//                       max={form.fecha ? sumarDias(form.fecha, DIAS_MAXIMOS - 1) : undefined}
-//                       value={form.fechaFin}
-//                       onChange={(e) => cambiar('fechaFin', e.target.value)}
-//                       error={errorDe('fechaFin')}
-//                     />
-//                   </Campo>
-//                 ) : (
-//                   <div className="hidden sm:block" />
-//                 )}
-//               </div>
-//               <OcupacionDia
-//                 horario={horario}
-//                 horaInicio={form.horaInicio}
-//                 horaFin={form.horaFin}
-//                 falta={
-//                   !form.espacio
-//                     ? 'Elige el espacio para ver cuándo está libre.'
-//                     : !form.fecha
-//                       ? 'Elige la fecha para ver cuándo está libre.'
-//                       : vivos.fecha || vivos.fechaFin
-//                         ? 'Corrige la fecha para ver cuándo está libre.'
-//                         : 'Elige el último día para ver cuándo está libre.'
-//                 }
-//                 dias={fechasValidas ? dias : []}
-//                 titulos={titulos}
-//                 onElegir={(l) => {
-//                   setForm((f) => ({ ...f, ...horasDesdeLibre(l, f.horaInicio, f.horaFin) }));
-//                   setErrores((x) => ({ ...x, horaInicio: '', horaFin: '' }));
-//                 }}
-//               />
-//               <div className="grid grid-cols-2 gap-3">
-//                 <Campo etiqueta="Hora de inicio" obligatorio error={errorDe('horaInicio')} ayuda={RESERVA}>
-//                   <Entrada type="time" min={HORA_ABRE} max={HORA_CIERRA} value={form.horaInicio} onChange={(e) => cambiar('horaInicio', e.target.value)} error={errorDe('horaInicio')} />
-//                 </Campo>
-//                 <Campo etiqueta="Hora de fin" obligatorio error={errorDe('horaFin')} ayuda={RESERVA}>
-//                   <Entrada type="time" min={HORA_ABRE} max={HORA_CIERRA} value={form.horaFin} onChange={(e) => cambiar('horaFin', e.target.value)} error={errorDe('horaFin')} />
-//                 </Campo>
-//               </div>
-//               <p className="-mt-2 min-h-[18px] text-xs">
-//                 <LineaHorario horario={horario} dias={dias.length} titulos={titulos} sinErrores={!Object.keys(vivos).length} />
-//               </p>
-//             </div>
-//           ) : (
-//             <div className="rounded-lg border border-borde bg-lienzo p-4 text-sm">
-//               <p className="flex items-center gap-2 text-texto">
-//                 <Icono nombre={evento?.esAlAireLibre ? 'wb_sunny' : 'roofing'} className="text-[18px] text-marino" />
-//                 {evento?.espacioNombre ?? `Espacio ${evento?.espacio}`}
-//               </p>
-//               <p className="mt-1.5 flex items-center gap-2 text-texto-2">
-//                 <Icono nombre="calendar_today" className="text-[18px]" />
-//                 {textoFechas(evento)} {textoHorario(evento) && `· ${textoHorario(evento)}`}
-//               </p>
-//             </div>
-//           )}
-//           {!nueva && <div className="mt-3">{campoCupo}</div>}
-//         </SeccionFormulario>
-
-// Antes (22 nov 2026, por la tarde) la seccion 2 tenia el "lugar previsto" opcional; el lugar ahora se aparta en Reservas:
-//         <SeccionFormulario numero={2} titulo={editarLugar ? 'Lugar previsto y cupo' : 'Lugar, fecha y cupo'}>
-//           {editarLugar ? (
-//             <div className="grid gap-3">
-//               <Campo
-//                 etiqueta="Lugar previsto"
-//                 error={errores.espacio}
-//                 ayuda={
-//                   espacioSel ? (
-//                     <LineaAyuda tono="info">
-//                       {espacioSel.esAlAireLibre ? 'Al aire libre: Clima podrá marcar el evento en riesgo.' : 'Techado: el clima no afecta al evento.'}
-//                     </LineaAyuda>
-//                   ) : (
-//                     <LineaAyuda>Opcional: si aún no saben dónde, déjalo sin definir.</LineaAyuda>
-//                   )
-//                 }
-//               >
-//                 <Selector className="h-11" value={form.espacio} onChange={(e) => cambiar('espacio', e.target.value)}>
-//                   {/* Quitar el lugar ya elegido no se puede (ms-eventos lo conserva si no se manda) */}
-//                   {(nueva || !evento?.espacio) && <option value="">Sin definir</option>}
-//                   {opcionesLugar.map((e) => (
-//                     <option key={e.id} value={e.id}>
-//                       {textoEspacio(e)}
-//                     </option>
-//                   ))}
-//                 </Selector>
-//               </Campo>
-//               {campoCupo}
-//               <Aviso tipo="info">La fecha y el horario se apartan en Reservas: abre el detalle del evento y usa "Apartar lugar y fecha".</Aviso>
-//             </div>
-
-// titulos ya no se usa aqui (era para la barra de ocupacion); la pagina lo sigue mandando
 function FormularioEvento({ abierto, modo, evento, categorias, espacios, catalogosListos, onCerrar, onGuardado }) {
   const { sesion } = useAuth();
   const esAdmin = sesion.rol === 'ADMINISTRADOR';
@@ -684,31 +191,11 @@ function FormularioEvento({ abierto, modo, evento, categorias, espacios, catalog
   }
 
   // Solo espacios activos y DISPONIBLES (los que ms-eventos acepta); al editar, el del evento aunque ya no este en la lista
-  // const disponibles = useMemo(() => espacios.filter((e) => e.estatus !== 0 && (e.estado ?? 'DISPONIBLE') === 'DISPONIBLE'), [espacios]);
   const espacioSel = espacios.find((e) => String(e.id) === form.espacio);
   const capacidad = espacioSel?.capacidad ?? null;
   // (22 nov 2026) El evento se registra sin fecha ni horario: se apartan despues en la Agenda (Nueva reserva de David).
-  // Antes el formulario revisaba la ocupacion y el horario:
-  // const dias = !form.fecha ? [] : form.variosDias && form.fechaFin >= form.fecha ? diasEntre(form.fecha, form.fechaFin) : [form.fecha];
-  // const fechasValidas = !!form.fecha && form.fecha >= hoyIso() && (!form.variosDias || (form.fechaFin > form.fecha && dias.length <= DIAS_MAXIMOS));
-  // const horario = useHorario({
-  // espacioId: nueva && fechasValidas ? form.espacio : null,
-  // dias: fechasValidas ? dias : [],
-  // horaInicio: form.horaInicio,
-  // horaFin: form.horaFin,
-  // // Solo se pregunta a la agenda si el horario es valido (dentro de 07:00-21:00, no pasado, fin despues del inicio)
-  // activo: !Object.keys(erroresHorario(form)).length,
-  // token: sesion.token,
-  // });
-  // // Errores del horario al momento (hora pasada, fuera de 07:00-21:00, fin antes del inicio)
-  // // Antes: const vivos = nueva ? erroresHorario(form) : {};
-  // const vivos = nueva ? { ...erroresFechas(form), ...erroresHorario(form) } : {};
-  // const vivos = {}; (ya no hay fechas ni horas que revisar al momento)
   // Sin fecha todavia (aun no se aparta en Reservas): el formulario solo pide el cupo en la seccion 2
   const editarLugar = nueva || !evento?.fecha;
-  // Ya no se elige lugar aqui (se aparta en Reservas). Antes, las opciones de lugar previsto:
-  // const opcionesLugar = espacioSel && !disponibles.some((e) => e.id === espacioSel.id) ? [espacioSel, ...disponibles] : disponibles;
-  // const errorDe = (k) => errores[k] || vivos[k] || ''; (era para fechas y horas)
 
   // Revisa antes de enviar; devuelve los errores por campo (vacio = todo bien)
   function revisar() {
@@ -721,22 +208,6 @@ function FormularioEvento({ abierto, modo, evento, categorias, espacios, catalog
     const cupo = Number(form.cupo);
     if (!form.cupo || cupo <= 0) x.cupo = 'Es obligatorio';
     else if (capacidad != null && cupo > capacidad) x.cupo = `El espacio admite ${capacidad.toLocaleString('es-MX')}`;
-    // Antes, al registrar tambien eran obligatorios el espacio, la fecha y el horario:
-    // if (nueva) {
-    // const hoy = hoyIso();
-    // if (!form.espacio) x.espacio = 'Elige el espacio';
-    // if (!form.fecha) x.fecha = 'Elige la fecha';
-    // else if (form.fecha < hoy) x.fecha = 'La fecha ya pasó';
-    // if (form.variosDias) {
-    // if (!form.fechaFin) x.fechaFin = 'Elige el último día';
-    // else if (form.fechaFin <= form.fecha) x.fechaFin = 'Debe ser después del primer día';
-    // else if (dias.length > DIAS_MAXIMOS) x.fechaFin = `Máximo ${DIAS_MAXIMOS} días`;
-    // }
-    // if (!form.horaInicio || !form.horaFin) x.horaFin = 'Indica el horario';
-    // // else if (minutos(form.horaFin) <= minutos(form.horaInicio)) x.horaFin = 'Debe ser después del inicio';
-    // // else if (form.fecha === hoy && form.horaInicio <= horaActual()) x.horaInicio = 'Esa hora ya pasó';
-    // else Object.assign(x, erroresHorario(form));
-    // }
     return x;
   }
 
@@ -765,9 +236,7 @@ function FormularioEvento({ abierto, modo, evento, categorias, espacios, catalog
         ? await crearEvento(
             {
               ...comunes,
-              // Sin lugar: el lugar se aparta en Reservas (vista de David) junto con la fecha. Antes (lugar previsto opcional):
-              // ...(form.espacio ? { espacio: Number(form.espacio), esAlAireLibre: !!espacioSel?.esAlAireLibre } : {}),
-              // Antes tambien: fecha, horaInicio, horaFin y fechaFin (se apartaba la reserva al registrar)
+              // Sin lugar: el lugar se aparta en Reservas (vista de David) junto con la fecha
               ...(esAdmin && form.organizador ? { organizador: Number(form.organizador) } : {}),
             },
             sesion.token,
@@ -776,8 +245,7 @@ function FormularioEvento({ abierto, modo, evento, categorias, espacios, catalog
             evento.id,
             {
               ...comunes,
-              // El lugar no se edita aqui (se aparta en Reservas o con "Cambiar de espacio"). Antes, sin fecha, el lugar previsto:
-              // espacio: editarLugar && form.espacio ? Number(form.espacio) : evento.espacio,
+              // El lugar no se edita aqui (se aparta en Reservas o con "Cambiar de espacio")
               espacio: evento.espacio,
               esAlAireLibre: evento.esAlAireLibre,
               organizador: esAdmin && form.organizador ? Number(form.organizador) : evento.organizador,
@@ -801,7 +269,6 @@ function FormularioEvento({ abierto, modo, evento, categorias, espacios, catalog
         En {espacioSel.nombre} caben hasta {capacidad.toLocaleString('es-MX')} personas.
       </LineaAyuda>
     ) : editarLugar ? (
-      // Antes: "Primero elige el espacio para ver cuántas personas caben."
       <LineaAyuda>Cuántas personas esperan. Al apartar el lugar en Reservas, revisa que quepan.</LineaAyuda>
     ) : (
       RESERVA
@@ -849,7 +316,6 @@ function FormularioEvento({ abierto, modo, evento, categorias, espacios, catalog
         abierto={abierto}
         onCerrar={() => !preguntarCerrar && intentarCerrar()}
         titulo={nueva ? 'Nuevo evento' : 'Editar evento'}
-        // Antes: nueva ? 'Se aparta el espacio en la agenda al registrarlo.' : 'Para cambiar el lugar o la fecha usa ...'
         subtitulo={nueva ? 'El lugar, la fecha y el horario se apartan después en Reservas.' : editarLugar ? 'Aún no tiene lugar ni fecha: se apartan en Reservas.' : 'Para cambiar el lugar o la fecha usa "Cambiar de espacio" o "Reprogramar".'}
         pie={pie}
       >
@@ -932,238 +398,6 @@ function FormularioEvento({ abierto, modo, evento, categorias, espacios, catalog
   );
 }
 
-// ---------- Reprogramar (solo eventos de un dia) ----------
-// La pagina le pone key={evento.id}: con cada evento el panel empieza de cero con su fecha y horario actuales
-function PanelReprogramar({ evento, titulos, onCerrar, onHecho }) {
-  const { sesion } = useAuth();
-  const [form, setForm] = useState(() => ({
-    fecha: evento?.fecha ?? '',
-    horaInicio: hhmm(evento?.horaInicio) ?? '10:00',
-    horaFin: hhmm(evento?.horaFin) ?? '12:00',
-  }));
-  const [errores, setErrores] = useState({});
-  const [error, setError] = useState(null);
-  const [guardando, setGuardando] = useState(false);
-
-  const sinCambio = !!evento && form.fecha === evento.fecha && form.horaInicio === hhmm(evento.horaInicio) && form.horaFin === hhmm(evento.horaFin);
-  const horario = useHorario({
-    espacioId: evento && form.fecha >= hoyIso() ? evento.espacio : null,
-    dias: form.fecha ? [form.fecha] : [],
-    horaInicio: form.horaInicio,
-    horaFin: form.horaFin,
-    ignorarEvento: evento?.id,
-    activo: !Object.keys(erroresHorario(form)).length,
-    token: sesion.token,
-  });
-  // Errores del horario al momento; los de "Reprogramar" (fecha vacia, etc.) se suman al pulsar
-  // Antes: const vivos = erroresHorario(form);
-  const vivos = { ...erroresFechas({ fecha: form.fecha }), ...erroresHorario(form) };
-  const errorDe = (k) => errores[k] || vivos[k] || '';
-  const motivo = sinCambio ? 'Elige una fecha u horario distintos.' : horario.bloquea ? 'El espacio está ocupado en ese horario.' : null;
-  const cambiar = (k, v) => {
-    setForm((f) => ({ ...f, [k]: v }));
-    setErrores((x) => ({ ...x, [k]: '' }));
-  };
-
-  async function guardar() {
-    if (motivo) return;
-    const x = {};
-    const hoy = hoyIso();
-    if (!form.fecha) x.fecha = 'Elige la fecha';
-    else if (form.fecha < hoy) x.fecha = 'La fecha ya pasó';
-    // if (minutos(form.horaFin) <= minutos(form.horaInicio)) x.horaFin = 'Debe ser después del inicio';
-    // else if (form.fecha === hoy && form.horaInicio <= horaActual()) x.horaInicio = 'Esa hora ya pasó';
-    Object.assign(x, erroresHorario(form));
-    setErrores(x);
-    if (Object.keys(x).length) return;
-    setGuardando(true);
-    setError(null);
-    try {
-      const r = await reprogramarEvento(evento.id, form, sesion.token);
-      onHecho(r, `Evento reprogramado: ${corto(r.titulo, 40)}`);
-    } catch (err) {
-      setError(mensajeAmigable(err));
-    } finally {
-      setGuardando(false);
-    }
-  }
-
-  const pie = (
-    <>
-      {error && (
-        <Aviso tipo="error" className="mb-3" onCerrar={() => setError(null)}>
-          {error}
-        </Aviso>
-      )}
-      <div className="flex flex-wrap justify-end gap-3">
-        <Boton variante="secundario" onClick={onCerrar} disabled={guardando}>
-          Cancelar
-        </Boton>
-        <Globo texto={motivo} className={motivo ? '' : 'contents'}>
-          <Boton icono="update" cargando={guardando} onClick={guardar} disabled={!!motivo}>
-            Reprogramar
-          </Boton>
-        </Globo>
-      </div>
-    </>
-  );
-
-  return (
-    <Panel abierto={!!evento} onCerrar={() => !guardando && onCerrar()} titulo="Reprogramar evento" subtitulo="Mismo espacio; cambian la fecha o el horario. El evento queda como Reprogramado." pie={pie}>
-      {evento && (
-        <>
-          <p className="mb-4 rounded-lg border border-borde bg-lienzo p-3 text-sm text-texto-2">
-            <span className="font-medium text-texto">{evento.titulo}</span>
-            <span className="block">
-              {/* Antes: Ahora: {textoFechas} · {textoHorario} · {espacio} (sin horario quedaba "· ·") */}
-              Ahora: {[textoFechas(evento), textoHorario(evento), nombreLugar(evento)].filter(Boolean).join(' · ')}
-            </span>
-          </p>
-          <div className="grid gap-3">
-            {/* Sin icono propio en fecha y horas: el navegador ya pone el suyo (antes salian dos) */}
-            <Campo etiqueta="Nueva fecha" obligatorio error={errorDe('fecha')} ayuda={RESERVA}>
-              <Entrada type="date" min={hoyIso()} value={form.fecha} onChange={(e) => cambiar('fecha', e.target.value)} error={errorDe('fecha')} />
-            </Campo>
-            <OcupacionDia
-              horario={horario}
-              horaInicio={form.horaInicio}
-              horaFin={form.horaFin}
-              falta={vivos.fecha ? 'Corrige la fecha para ver cuándo está libre.' : 'Elige la fecha para ver cuándo está libre.'}
-              dias={form.fecha ? [form.fecha] : []}
-              titulos={titulos}
-              onElegir={(l) => setForm((f) => ({ ...f, ...horasDesdeLibre(l, f.horaInicio, f.horaFin) }))}
-            />
-            <div className="grid grid-cols-2 gap-3">
-              <Campo etiqueta="Hora de inicio" obligatorio error={errorDe('horaInicio')} ayuda={RESERVA}>
-                <Entrada type="time" min={HORA_ABRE} max={HORA_CIERRA} value={form.horaInicio} onChange={(e) => cambiar('horaInicio', e.target.value)} error={errorDe('horaInicio')} />
-              </Campo>
-              <Campo etiqueta="Hora de fin" obligatorio error={errorDe('horaFin')} ayuda={RESERVA}>
-                <Entrada type="time" min={HORA_ABRE} max={HORA_CIERRA} value={form.horaFin} onChange={(e) => cambiar('horaFin', e.target.value)} error={errorDe('horaFin')} />
-              </Campo>
-            </div>
-            <p className="-mt-2 min-h-[18px] text-xs">
-              {sinCambio ? RESERVA : <LineaHorario horario={horario} dias={1} titulos={titulos} sinErrores={!Object.keys(vivos).length} />}
-            </p>
-          </div>
-        </>
-      )}
-    </Panel>
-  );
-}
-
-// ---------- Cambiar de espacio (todos sus dias, misma fecha y horario) ----------
-// Tambien con key={evento.id}: el selector empieza vacio con cada evento
-function PanelUbicacion({ evento, espacios, titulos, onCerrar, onHecho }) {
-  const { sesion } = useAuth();
-  const [espacio, setEspacio] = useState('');
-  const [error, setError] = useState(null);
-  const [guardando, setGuardando] = useState(false);
-
-  // Activos, DISPONIBLES, distintos del actual y donde cabe el cupo
-  const opciones = useMemo(
-    () =>
-      evento
-        ? espacios.filter((e) => e.estatus !== 0 && (e.estado ?? 'DISPONIBLE') === 'DISPONIBLE' && e.id !== evento.espacio && e.capacidad >= evento.cupoMaximo)
-        : [],
-    [espacios, evento],
-  );
-  const nuevo = opciones.find((e) => String(e.id) === espacio);
-  const dias = evento?.fecha ? diasEntre(evento.fecha, evento.fechaFin ?? evento.fecha) : [];
-  const horario = useHorario({
-    espacioId: espacio || null,
-    dias,
-    horaInicio: hhmm(evento?.horaInicio),
-    horaFin: hhmm(evento?.horaFin),
-    token: sesion.token,
-  });
-  // Solo se bloquea si ya se sabe que el espacio nuevo esta ocupado (la agenda revisa otra vez al guardar)
-  const motivo = !espacio ? 'Elige el espacio nuevo.' : horario.bloquea ? 'El espacio nuevo está ocupado en ese horario.' : null;
-
-  async function guardar() {
-    if (motivo) return;
-    setGuardando(true);
-    setError(null);
-    try {
-      const r = await cambiarUbicacionEvento(evento.id, Number(espacio), sesion.token);
-      onHecho(r, `Cambio de espacio: ${corto(r.titulo, 30)} → ${corto(r.espacioNombre ?? nuevo?.nombre ?? '', 30)}`);
-    } catch (err) {
-      setError(mensajeAmigable(err));
-    } finally {
-      setGuardando(false);
-    }
-  }
-
-  const pie = (
-    <>
-      {error && (
-        <Aviso tipo="error" className="mb-3" onCerrar={() => setError(null)}>
-          {error}
-        </Aviso>
-      )}
-      <div className="flex flex-wrap justify-end gap-3">
-        <Boton variante="secundario" onClick={onCerrar} disabled={guardando}>
-          Cancelar
-        </Boton>
-        <Globo texto={motivo} className={motivo ? '' : 'contents'}>
-          <Boton icono="swap_horiz" cargando={guardando} onClick={guardar} disabled={!!motivo}>
-            Cambiar de espacio
-          </Boton>
-        </Globo>
-      </div>
-    </>
-  );
-
-  // Pasar de aire libre a techado (o al reves) cambia lo que Clima revisa
-  const cambiaAire = nuevo && !!nuevo.esAlAireLibre !== !!evento?.esAlAireLibre;
-  return (
-    <Panel abierto={!!evento} onCerrar={() => !guardando && onCerrar()} titulo="Cambiar de espacio" subtitulo="Se mueven todos sus días al espacio nuevo, con la misma fecha y horario." pie={pie}>
-      {evento && (
-        <>
-          <p className="mb-4 rounded-lg border border-borde bg-lienzo p-3 text-sm text-texto-2">
-            <span className="font-medium text-texto">{evento.titulo}</span>
-            <span className="block">
-              {textoFechas(evento)} · {textoHorario(evento)} · cupo {evento.cupoMaximo}
-            </span>
-            <span className="block">Ahora en: {nombreLugar(evento)}</span>
-          </p>
-          <Campo
-            etiqueta="Espacio nuevo"
-            obligatorio
-            ayuda={
-              opciones.length === 0 ? (
-                <LineaAyuda tono="aviso">No hay otro espacio disponible donde quepa el cupo ({evento.cupoMaximo}).</LineaAyuda>
-              ) : cambiaAire ? (
-                <LineaAyuda tono="aviso">
-                  {nuevo.esAlAireLibre ? 'El evento pasará a ser al aire libre: Clima podrá marcarlo en riesgo.' : 'El evento pasará a ser techado: el clima ya no lo afectará.'}
-                </LineaAyuda>
-              ) : (
-                RESERVA
-              )
-            }
-          >
-            <Selector className="h-11" value={espacio} onChange={(e) => setEspacio(e.target.value)}>
-              <option value="">Elige el espacio...</option>
-              {opciones.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {textoEspacio(e)}
-                </option>
-              ))}
-            </Selector>
-          </Campo>
-          {espacio && (
-            <div className="mt-1 grid gap-2">
-              <OcupacionDia horario={horario} horaInicio={hhmm(evento.horaInicio)} horaFin={hhmm(evento.horaFin)} dias={dias} titulos={titulos} />
-              <p className="min-h-[18px] text-xs">
-                <LineaHorario horario={horario} dias={dias.length} titulos={titulos} sinErrores />
-              </p>
-            </div>
-          )}
-        </>
-      )}
-    </Panel>
-  );
-}
-
 // ---------- Detalle (panel lateral) con las acciones que permite su estado ----------
 // onApartar: abre la Nueva reserva de la Agenda (vista de David) con este evento elegido
 // espacios: para avisar si el cupo no cabe en el lugar que se aparto en Reservas
@@ -1175,7 +409,8 @@ function DetalleEvento({ id, version, espacios = [], puedeModificar, colorDe, on
   const terminado = e && TERMINADOS.includes(e.estado);
   const puede = e && puedeModificar(e) && !terminado;
   const hoy = hoyIso();
-  const yaEmpezo = !!e?.fecha && e.fecha <= hoy;
+  const yaEmpezo = yaEmpezoEvento(e);
+  const yaTermino = yaTerminoEvento(e);
   // El riesgo por clima lo determina el microservicio de Clima y el organizador solo decide (PDF de la maestra).
   // El administrador conserva un aviso manual (p. ej. alerta de Proteccion Civil o mientras Clima no este listo),
   // solo para eventos al aire libre, con fecha y que no hayan pasado (sin fecha no hay pronostico)
@@ -1188,22 +423,40 @@ function DetalleEvento({ id, version, espacios = [], puedeModificar, colorDe, on
         ? 'El evento ya pasó.'
         : null;
 
+  // Las acciones que cambian el estado van juntas en "Cambios del evento"; si esta EN_RIESGO, las cuatro decisiones
+  // del PDF (mantener, cambiar de lugar, reprogramar o cancelar) van en el aviso. El pie solo tiene Editar y Cerrar
+  const accion = (icono, texto, alPulsar, motivo = null, variante = 'secundario') => (
+    <Globo texto={motivo} className="block">
+      <Boton variante={variante} icono={icono} className="w-full justify-start" disabled={!!motivo} onClick={alPulsar}>
+        {texto}
+      </Boton>
+    </Globo>
+  );
+  // Los dos abren su panel sobre la Agenda. Sin fecha no hay reserva que mover: se aparta
+  const enRiesgo = e?.estado === 'EN_RIESGO' && !yaTermino;
+  const motivoMover = e?.fecha ? null : 'No tiene lugar ni fecha: usa "Apartar lugar y fecha".';
+  const botonReprogramar = () => accion('update', 'Reprogramar', () => onReprogramar(e), esVariosDias(e) ? 'Dura varios días: cada día se mueve en Reservas.' : motivoMover);
+  const botonUbicacion = () => accion('swap_horiz', 'Cambiar de espacio', () => onUbicacion(e), motivoMover);
+  const botonCancelar = () => accion('event_busy', 'Cancelar evento', () => onEstado(e, 'CANCELADO'), yaTermino ? MOTIVO_YA_TERMINO : null, 'peligro');
+  const botonFinalizar = () =>
+    accion(
+      'task_alt',
+      'Finalizar',
+      () => onEstado(e, 'FINALIZADO'),
+      yaEmpezo ? null : e.fecha ? `Se puede finalizar desde el ${fechaCorta(e.fecha)} a las ${hhmm(e.horaInicio)}.` : 'Aún no tiene fecha.',
+    );
+  const botonApartar = () => (
+    <Boton icono="event_available" className="w-full justify-start" onClick={() => onApartar(e)}>
+      Apartar lugar y fecha
+    </Boton>
+  );
+
   const pie = (
     <div className="flex flex-wrap justify-end gap-2">
       {puede && (
-        <>
-          <Boton variante="peligro" icono="event_busy" onClick={() => onEstado(e, 'CANCELADO')}>
-            Cancelar evento
-          </Boton>
-          <Globo texto={yaEmpezo ? null : `Se puede finalizar desde el ${fechaCorta(e.fecha ?? hoy)}.`} className={yaEmpezo ? 'contents' : ''}>
-            <Boton variante="secundario" icono="task_alt" disabled={!yaEmpezo} onClick={() => onEstado(e, 'FINALIZADO')}>
-              Finalizar
-            </Boton>
-          </Globo>
-          <Boton variante="secundario" icono="edit" onClick={() => onEditar(e)}>
-            Editar
-          </Boton>
-        </>
+        <Boton variante="secundario" icono="edit" onClick={() => onEditar(e)}>
+          Editar
+        </Boton>
       )}
       <Boton onClick={onCerrar}>Cerrar</Boton>
     </div>
@@ -1222,10 +475,14 @@ function DetalleEvento({ id, version, espacios = [], puedeModificar, colorDe, on
         <>
           <div className="mb-5 rounded-xl border border-borde bg-lienzo p-4">
             <div className="flex items-start justify-between gap-3">
-              <p className="font-titulo text-lg font-semibold text-texto break-words">{e.titulo}</p>
-              {/* Numero del evento: el que aparece en la Nueva reserva y en Reservas de la Agenda */}
-              <p className="text-xs text-tenue tabular">Evento #{e.id}</p>
-              <Estado valor={e.estado} />
+              <div className="min-w-0">
+                <p className="font-titulo text-lg font-semibold text-texto break-words">{e.titulo}</p>
+                {/* Numero del evento: el que aparece en la Nueva reserva y en Reservas de la Agenda */}
+                <p className="mt-0.5 text-xs text-tenue tabular">Evento #{e.id}</p>
+              </div>
+              <span className="shrink-0">
+                <EstadoEvento e={e} />
+              </span>
             </div>
             {e.descripcion && <p className="mt-2 text-sm text-texto-2 break-words">{e.descripcion}</p>}
             <dl className="mt-3 grid grid-cols-[110px_1fr] items-center gap-x-4 gap-y-3 border-t border-borde pt-3 text-sm">
@@ -1239,8 +496,7 @@ function DetalleEvento({ id, version, espacios = [], puedeModificar, colorDe, on
                 {!e.fecha && e.reservaLiberada ? (
                   <span className="text-aviso-texto">Sin reserva vigente: se liberó en la Agenda</span>
                 ) : !e.fecha ? (
-                  // Antes: "Sin fecha: no tiene reserva en la agenda o la agenda no respondió"
-                  <span className="text-tenue">Sin fecha: aún no se aparta en Reservas (o la agenda no respondió)</span>
+                  <span className="text-tenue">{sinRespuestaAgenda(e) ? 'No disponible: la Agenda no respondió' : 'Aún no se aparta'}</span>
                 ) : esVariosDias(e) ? (
                   <>
                     Del {fechaLarga(e.fecha)} al {fechaLarga(e.fechaFin)}
@@ -1280,26 +536,42 @@ function DetalleEvento({ id, version, espacios = [], puedeModificar, colorDe, on
             ) : null;
           })()}
           {/* Registrado sin fecha (lo normal cuando aun no se sabe cuando): la fecha se aparta en Reservas */}
-          {!e.fecha && !e.reservaLiberada && !terminado && (
-            <Aviso tipo="info" titulo="Aún no tiene fecha" className="mb-4">
-              <span className="block">El lugar y la fecha se apartan en Reservas.</span>
-              {puede && (
-                <Boton variante="secundario" tamano="sm" icono="event_available" className="mt-2" onClick={() => onApartar(e)}>
-                  Apartar lugar y fecha
-                </Boton>
-              )}
+          {sinRespuestaAgenda(e) && !terminado && (
+            <Aviso tipo="aviso" titulo="No se pudo consultar la Agenda" className="mb-4">
+              <span className="block">No se sabe si este evento ya tiene lugar y fecha.</span>
+              <Boton variante="secundario" tamano="sm" icono="refresh" className="mt-2" onClick={datos.recargar}>
+                Reintentar
+              </Boton>
+            </Aviso>
+          )}
+          {!e.fecha && e.reservaLiberada === false && !terminado && (
+            <Aviso tipo="info" titulo="Por programar: falta su lugar y fecha" className="mb-4">
+              {puede ? 'Apártalos en la Agenda; al confirmar, el evento quedará programado.' : 'El organizador aún no los aparta.'}
             </Aviso>
           )}
           {e.reservaLiberada && !terminado && (
             <Aviso tipo="aviso" titulo="La reserva de este evento se liberó en la Agenda" className="mb-4">
-              {puede
-                ? 'El espacio ya no está apartado. Reprográmalo para apartar una fecha nueva, o cancélalo.'
-                : 'El espacio ya no está apartado. El organizador debe reprogramarlo o cancelarlo.'}
+              <span className="block">
+                {!puede
+                  ? 'El espacio ya no está apartado. El organizador debe apartarlo de nuevo o cancelarlo.'
+                  : 'El espacio ya no está apartado. Aparta otra vez su lugar y fecha, o cancélalo.'}
+              </span>
             </Aviso>
           )}
-          {e.estado === 'EN_RIESGO' && (
+          {e.estado === 'EN_RIESGO' && !yaTermino && (
             <Aviso tipo="aviso" titulo="Evento en riesgo por condiciones meteorológicas" className="mb-4">
-              {puede ? 'Decide qué hacer: mantenerlo, cambiarlo de espacio, reprogramarlo o cancelarlo.' : 'El organizador decidirá si se mantiene, cambia de espacio, se reprograma o se cancela.'}
+              {puede && (
+                <>
+                  <span className="block">Decide qué hacer:</span>
+                  <span className="mt-2 grid gap-2 sm:grid-cols-2">
+                    {accion('verified', 'Mantener el evento', () => onEstado(e, 'MANTENIDO'))}
+                    {botonUbicacion()}
+                    {botonReprogramar()}
+                    {botonCancelar()}
+                  </span>
+                </>
+              )}
+              {!puede && 'El organizador decidirá si se mantiene, cambia de espacio, se reprograma o se cancela.'}
             </Aviso>
           )}
           {terminado && (
@@ -1308,60 +580,33 @@ function DetalleEvento({ id, version, espacios = [], puedeModificar, colorDe, on
             </Aviso>
           )}
 
-          {puede && (
+          {puede && !(enRiesgo && !yaEmpezo && !esVariosDias(e)) && (
             <>
               <h3 className="etiqueta mb-3 text-texto">Cambios del evento</h3>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {/* Antes tambien se desactivaba sin fecha (disabled={esVariosDias(e) || !e.fecha}); ahora reprogramar
-                    a un evento sin reserva vigente le aparta una nueva (ms-eventos, 22 nov) */}
-                {/* Un evento que nunca tuvo fecha no se "reprograma": su fecha se aparta en Reservas (Apartar lugar y fecha).
-                    Si tuvo reserva y se libero afuera, Reprogramar si le aparta una nueva */}
-                <Globo
-                  texto={
-                    esVariosDias(e)
-                      ? 'Dura varios días: para cambiar sus fechas, cancélalo y regístralo de nuevo.'
-                      : !e.fecha && !e.reservaLiberada
-                        ? 'Aún no tiene fecha: apártala con "Apartar lugar y fecha".'
-                        : null
-                  }
-                  className="block"
-                >
-                  <Boton variante="secundario" icono="update" className="w-full justify-start" disabled={esVariosDias(e) || (!e.fecha && !e.reservaLiberada)} onClick={() => onReprogramar(e)}>
-                    Reprogramar
-                  </Boton>
-                </Globo>
-                <Boton variante="secundario" icono="swap_horiz" className="w-full justify-start" disabled={!e.fecha} onClick={() => onUbicacion(e)}>
-                  Cambiar de espacio
-                </Boton>
+              {/* Si el ultimo boton queda solo en su renglon, ocupa todo el ancho */}
+              <div className="grid gap-2 sm:grid-cols-2 sm:[&>*:last-child:nth-child(odd)]:col-span-2">
+                {/* Solo lo que se puede hacer segun su momento: por programar, futuro, en curso o ya realizado.
+                    En riesgo, las cuatro decisiones estan en el aviso */}
+                {!e.fecha && !sinRespuestaAgenda(e) && botonApartar()}
+                {!enRiesgo && !!e.fecha && !yaEmpezo && botonReprogramar()}
+                {!enRiesgo && !!e.fecha && !yaTermino && botonUbicacion()}
                 {/* Cancelar un solo dia de un evento de varios dias es liberar esa reserva: se hace en Reservas (vista de David),
                     sin cambiar el estado del evento. Sus paginas no reciben filtros por direccion: se busca por el numero */}
-                {esVariosDias(e) && (
+                {esVariosDias(e) && !yaTermino && (
                   <Globo texto={`En Reservas, busca el evento #${e.id} y libera el día que se cancela.`} className="block">
-                    <Boton variante="secundario" icono="event_busy" className="w-full justify-start" onClick={() => navegar('/reservas')}>
+                    <Boton variante="secundario" icono="event_available" className="w-full justify-start" onClick={() => navegar('/reservas')}>
                       Cancelar un día (en Reservas)
                     </Boton>
                   </Globo>
                 )}
-                {e.estado === 'EN_RIESGO' ? (
-                  <Boton variante="secundario" icono="verified" className="w-full justify-start" onClick={() => onEstado(e, 'MANTENIDO')}>
-                    Mantener el evento
-                  </Boton>
-                ) : (
-                  // Antes lo veia tambien el organizador:
-                  // <Globo texto={e.esAlAireLibre ? null : 'Solo un evento al aire libre puede quedar en riesgo por el clima.'} className="block">
-                  //   <Boton ... disabled={!e.esAlAireLibre} onClick={() => onEstado(e, 'EN_RIESGO')}>Marcar en riesgo (clima)</Boton>
-                  // </Globo>
-                  esAdmin && (
-                    <Globo texto={motivoRiesgo} className="block">
-                      <Boton variante="secundario" icono="warning" className="w-full justify-start" disabled={!!motivoRiesgo} onClick={() => onEstado(e, 'EN_RIESGO')}>
-                        Marcar en riesgo (clima)
-                      </Boton>
-                    </Globo>
-                  )
-                )}
+                {yaEmpezo && botonFinalizar()}
+                {/* Normalmente lo marca Clima; el administrador conserva el aviso manual */}
+                {esAdmin && e.estado !== 'EN_RIESGO' && !motivoRiesgo && !yaTermino && accion('warning', 'Marcar en riesgo (clima)', () => onEstado(e, 'EN_RIESGO'))}
+                {!enRiesgo && !yaTermino && botonCancelar()}
               </div>
             </>
           )}
+
         </>
       )}
     </Panel>
@@ -1375,7 +620,8 @@ function textoConfirmacion(tipo, e) {
   if (tipo === 'CANCELADO')
     return {
       titulo: `Cancelar ${nombre}`,
-      cuerpo: `Se libera el espacio${esVariosDias(e) ? ` los ${numeroDias(e)} días` : ''} en la agenda. Un evento cancelado ya no se puede modificar.`,
+      // La agenda conserva los dias pasados o en curso (cuentan para la asistencia)
+      cuerpo: `${!e.fecha ? '' : yaEmpezoEvento(e) ? (esVariosDias(e) ? 'El evento ya empezó: en la agenda se liberan solo los días que aún no empiezan. ' : 'El evento ya empezó: su reserva se conserva en la agenda. ') : `Se libera el espacio${esVariosDias(e) ? ` los ${numeroDias(e)} días` : ''} en la agenda. `}Un evento cancelado ya no se puede modificar.`,
       boton: 'Cancelar evento',
       icono: 'event_busy',
       tono: 'peligro',
@@ -1393,7 +639,6 @@ function textoConfirmacion(tipo, e) {
   if (tipo === 'EN_RIESGO')
     return {
       titulo: `Marcar en riesgo ${nombre}`,
-      // cuerpo: 'Es un evento al aire libre. Después podrás mantenerlo, cambiarlo de espacio, reprogramarlo o cancelarlo.',
       cuerpo: 'Normalmente lo marca el servicio de Clima. Úsalo solo ante un aviso oficial (por ejemplo, de Protección Civil). Después el organizador decide si lo mantiene, lo cambia de espacio, lo reprograma o lo cancela.',
       boton: 'Marcar en riesgo',
       icono: 'warning',
@@ -1412,6 +657,7 @@ const MENSAJE_ESTADO = { CANCELADO: 'Evento cancelado', FINALIZADO: 'Evento fina
 // ---------- Pagina ----------
 export default function Eventos() {
   const { sesion } = useAuth();
+  const navegar = useNavigate();
   const esAdmin = sesion.rol === 'ADMINISTRADOR';
   const organiza = ROLES_QUE_ORGANIZAN.includes(sesion.rol);
   const esOrganizador = sesion.rol === 'ORGANIZADOR';
@@ -1420,15 +666,16 @@ export default function Eventos() {
   const [buscarEn, setBuscarEn] = useState('titulo'); // 'titulo' | 'lugar'
   const [estado, setEstado] = useState('');
   const [categoria, setCategoria] = useState('');
+  const [fecha, setFecha] = useState(''); // los eventos de ese dia (uno de varios dias cuenta en cualquiera de ellos)
   const [orden, setOrden] = useState('proximos');
   const [alcance, setAlcance] = useState(esOrganizador ? 'mios' : 'todos'); // el organizador ve primero los suyos
-  const [detalle, setDetalle] = useState(null); // id
+  // Al volver de la Agenda (MoverEventoEnAgenda) se abre otra vez el detalle y, si hubo un cambio, se dice
+  const { state: regreso, pathname } = useLocation();
+  const [detalle, setDetalle] = useState(regreso?.detalleEvento ?? null); // id
   const [formulario, setFormulario] = useState(null); // { modo, evento }
-  const [reprogramar, setReprogramar] = useState(null);
-  const [ubicacion, setUbicacion] = useState(null);
   const [confirmar, setConfirmar] = useState(null); // { tipo, evento }
   const [trabajando, setTrabajando] = useState(false);
-  const [mensaje, setMensaje] = useState(null);
+  const [mensaje, setMensaje] = useState(() => (regreso?.mensaje ? { ...regreso.mensaje, id: Date.now() } : null));
   const [resaltado, setResaltado] = useState(null);
   const [version, setVersion] = useState(0); // al cambiar, el detalle se vuelve a pedir
   const enfocar = useRef(null);
@@ -1446,12 +693,10 @@ export default function Eventos() {
   }, [resaltado]);
 
   // Nueva reserva de la Agenda (vista de David, se abre desde cualquier pantalla); version sube al crear una reserva
-  const { abrir: abrirReserva, version: versionReservas } = useNuevaReserva();
-  // Antes: [busqueda, buscarEn, sesion.token]; ahora tambien recarga cuando se aparta una reserva (para ver su fecha)
+  const { version: versionReservas } = useNuevaReserva();
+  // Tambien recarga cuando se aparta una reserva (para ver su fecha)
   const datos = useDatos(() => (busqueda ? buscarEventos(busqueda, buscarEn === 'lugar', sesion.token) : listarEventos({}, sesion.token)), [busqueda, buscarEn, sesion.token, versionReservas]);
   const categorias = useDatos(() => listarCategorias(false, sesion.token), [sesion.token]);
-  // Titulos de los eventos para decir con quien choca un horario en la barra de ocupacion
-  const titulos = useMemo(() => new Map((datos.datos ?? []).map((e) => [Number(e.id), e.titulo])), [datos.datos]);
   const espacios = useDatos(() => listarEspacios(false, sesion.token), [sesion.token]);
   const catalogosListos = !!categorias.datos && !!espacios.datos;
 
@@ -1464,10 +709,11 @@ export default function Eventos() {
     () =>
       [...(datos.datos ?? [])]
         .filter((e) => alcance !== 'mios' || Number(e.organizador) === Number(sesion.usuarioId))
-        .filter((e) => !estado || e.estado === estado)
+        .filter((e) => !estado || estadoVisible(e) === estado)
         .filter((e) => !categoria || String(e.categoria) === categoria)
+        .filter((e) => !fecha || (!!e.fecha && e.fecha <= fecha && fecha <= (e.fechaFin ?? e.fecha)))
         .sort(ordenar),
-    [datos.datos, alcance, estado, categoria, ordenar, sesion.usuarioId],
+    [datos.datos, alcance, estado, categoria, fecha, ordenar, sesion.usuarioId],
   );
   const filtroCategorias = useMemo(
     () => [{ valor: '', texto: 'Todas', icono: 'sell' }, ...(categorias.datos ?? []).map((c) => ({ valor: String(c.id), texto: c.nombre, icono: 'label' }))],
@@ -1485,7 +731,6 @@ export default function Eventos() {
   }, [datos.datos]);
 
   function terminar(e, texto) {
-    // avisar('exito', texto);
     // Al cancelar, reprogramar o cambiar de lugar ms-eventos avisa a los inscritos; si Inscripciones o
     // Notificaciones no respondieron, el cambio si se hizo y la respuesta lo dice en "aviso"
     if (e.aviso) avisar('aviso', `${texto} · No se pudo avisar a los inscritos.`);
@@ -1510,6 +755,18 @@ export default function Eventos() {
     }
   }
 
+  // Reprogramar (solo fecha y horario) y Cambiar de espacio (solo el lugar) se eligen viendo la Agenda de David, en un panel
+  // propio: son decisiones sobre el evento, asi que las guarda ms-eventos (mueve la reserva, cambia el estado y avisa)
+  const decidirEnAgenda = (tipo) => (e) => {
+    setDetalle(null);
+    navegar('/agenda', { state: { moverEvento: { tipo, evento: e } } });
+  };
+
+  // El regreso ya se uso para abrir el detalle: se quita para que no se repita al recargar
+  useEffect(() => {
+    if (regreso?.detalleEvento) navegar(pathname, { replace: true, state: null });
+  }, [regreso, navegar, pathname]);
+
   // Botones de cada evento (los mismos en la tarjeta y en la fila de la tabla), como en Espacios y Categorias
   const acciones = (e) =>
     puedeModificar(e) && !TERMINADOS.includes(e.estado) ? (
@@ -1517,9 +774,11 @@ export default function Eventos() {
         <Boton variante="fantasma" tamano="sm" icono="edit" onClick={() => abrirFormulario('editar', e)}>
           Editar
         </Boton>
-        <Boton variante="fantasma" tamano="sm" icono="event_busy" onClick={() => setConfirmar({ tipo: 'CANCELADO', evento: e })}>
-          Cancelar
-        </Boton>
+        <Globo texto={yaTerminoEvento(e) ? MOTIVO_YA_TERMINO : null}>
+          <Boton variante="fantasma" tamano="sm" icono="event_busy" className="disabled:opacity-40" disabled={yaTerminoEvento(e)} onClick={() => setConfirmar({ tipo: 'CANCELADO', evento: e })}>
+            Cancelar
+          </Boton>
+        </Globo>
       </>
     ) : null;
   // En la tabla, solo iconos (como Reservas de la Agenda) para que la columna Lugar no se quede sin espacio
@@ -1531,8 +790,8 @@ export default function Eventos() {
             <Icono nombre="edit" className="text-[20px]" />
           </button>
         </Globo>
-        <Globo texto="Cancelar evento">
-          <button type="button" onClick={() => setConfirmar({ tipo: 'CANCELADO', evento: e })} aria-label={`Cancelar ${e.titulo}`} className="grid size-9 place-items-center rounded-lg text-texto-2 hover:bg-peligro-tinte hover:text-peligro-texto">
+        <Globo texto={yaTerminoEvento(e) ? MOTIVO_YA_TERMINO : 'Cancelar evento'}>
+          <button type="button" disabled={yaTerminoEvento(e)} onClick={() => setConfirmar({ tipo: 'CANCELADO', evento: e })} aria-label={`Cancelar ${e.titulo}`} className="grid size-9 place-items-center rounded-lg text-texto-2 hover:bg-peligro-tinte hover:text-peligro-texto disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-texto-2">
             <Icono nombre="event_busy" className="text-[20px]" />
           </button>
         </Globo>
@@ -1544,7 +803,14 @@ export default function Eventos() {
     setFormulario({ modo, evento });
   };
   const conf = textoConfirmacion(confirmar?.tipo, confirmar?.evento);
-  const filtrando = busqueda || estado || categoria;
+  const filtrando = busqueda || estado || categoria || fecha;
+  const limpiarFiltros = () => {
+    setTexto('');
+    setBusqueda('');
+    setEstado('');
+    setCategoria('');
+    setFecha('');
+  };
 
   return (
     <>
@@ -1565,42 +831,58 @@ export default function Eventos() {
       </TituloPagina>
 
       <Tarjeta>
-        <div className="flex flex-wrap items-center gap-3 border-b border-borde p-4">
-          <Entrada
-            icono={buscarEn === 'lugar' ? 'location_on' : 'search'}
-            placeholder={buscarEn === 'lugar' ? 'Buscar por lugar (nombre del espacio)' : 'Buscar por título'}
-            value={texto}
-            onChange={(e) => setTexto(e.target.value)}
-            className="h-10 min-w-[220px] flex-1"
-            derecha={
-              texto && (
-                <button type="button" onClick={() => setTexto('')} aria-label="Limpiar búsqueda" className="text-tenue hover:text-texto-2">
-                  <Icono nombre="close" className="text-[18px]" />
-                </button>
-              )
-            }
-          />
-          <Segmentado
-            valor={buscarEn}
-            onChange={setBuscarEn}
-            opciones={[
-              { valor: 'titulo', texto: 'Título' },
-              { valor: 'lugar', texto: 'Lugar' },
-            ]}
-          />
-          <MenuDesplegable valor={estado} onChange={setEstado} opciones={FILTRO_ESTADOS} etiqueta="Estado" icono="filter_list" ancho="w-60" />
-          <MenuDesplegable valor={categoria} onChange={setCategoria} opciones={filtroCategorias} etiqueta="Categoría" icono="sell" ancho="w-60" />
-          <MenuDesplegable valor={orden} onChange={setOrden} opciones={ORDENES} etiqueta="Ordenar" ancho="w-60" />
-          {esOrganizador && (
+        {/* Busqueda en el primer renglon; filtros a la izquierda y orden a la derecha en el segundo */}
+        <div className="space-y-3 border-b border-borde p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Entrada
+              icono={buscarEn === 'lugar' ? 'location_on' : 'search'}
+              placeholder={buscarEn === 'lugar' ? 'Buscar por lugar (nombre del espacio)' : 'Buscar por título'}
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              className="h-10 min-w-[200px] flex-1"
+              derecha={
+                texto && (
+                  <button type="button" onClick={() => setTexto('')} aria-label="Limpiar búsqueda" className="text-tenue hover:text-texto-2">
+                    <Icono nombre="close" className="text-[18px]" />
+                  </button>
+                )
+              }
+            />
             <Segmentado
-              valor={alcance}
-              onChange={setAlcance}
+              valor={buscarEn}
+              onChange={setBuscarEn}
               opciones={[
-                { valor: 'mios', texto: 'Mis eventos' },
-                { valor: 'todos', texto: 'Todos' },
+                { valor: 'titulo', texto: 'Título' },
+                { valor: 'lugar', texto: 'Lugar' },
               ]}
             />
-          )}
+            {esOrganizador && (
+              <Segmentado
+                valor={alcance}
+                onChange={setAlcance}
+                opciones={[
+                  { valor: 'mios', texto: 'Mis eventos' },
+                  { valor: 'todos', texto: 'Todos' },
+                ]}
+              />
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-sm text-texto-2">
+              <span className="hidden sm:inline">Fecha:</span>
+              <Entrada type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} aria-label="Buscar por fecha" className="h-10 w-[160px]" />
+            </label>
+            <MenuDesplegable valor={estado} onChange={setEstado} opciones={organiza ? FILTRO_ESTADOS : FILTRO_ESTADOS_PUBLICO} etiqueta="Estado" icono="filter_list" ancho="w-60" />
+            <MenuDesplegable valor={categoria} onChange={setCategoria} opciones={filtroCategorias} etiqueta="Categoría" icono="sell" ancho="w-60" />
+            {filtrando && (
+              <Boton variante="fantasma" tamano="sm" icono="filter_alt_off" onClick={limpiarFiltros}>
+                Limpiar
+              </Boton>
+            )}
+            <div className="sm:ml-auto">
+              <MenuDesplegable valor={orden} onChange={setOrden} opciones={ORDENES} etiqueta="Ordenar" ancho="w-60" />
+            </div>
+          </div>
         </div>
 
         {datos.error && !datos.datos ? (
@@ -1613,7 +895,7 @@ export default function Eventos() {
             titulo={
               busqueda
                 ? `No hay eventos ${buscarEn === 'lugar' ? 'en un lugar que contenga' : 'que contengan'} "${busqueda}"`
-                : estado || categoria
+                : estado || categoria || fecha
                   ? 'No hay eventos con esos filtros'
                   : alcance === 'mios'
                     ? 'Aún no tienes eventos'
@@ -1636,24 +918,13 @@ export default function Eventos() {
                   <button type="button" onClick={() => setDetalle(e.id)} aria-label={`Ver el detalle de ${e.titulo}`} className="group block min-w-0 flex-1 p-4 text-left">
                     <div className="flex items-start justify-between gap-2">
                       <p className="min-w-0 truncate font-medium text-texto group-hover:text-marino group-hover:underline">{e.titulo}</p>
-                      <Estado valor={e.estado} />
+                      <EstadoEvento e={e} />
                     </div>
                     {/* Numero del evento: es el que se elige en la Nueva reserva de la Agenda ("Titulo (#id)") */}
                     <p className="mt-1 truncate text-xs text-texto-2">
                       <span className="tabular text-tenue">#{e.id}</span> · {e.categoriaNombre ?? `Categoría ${e.categoria}`}
-                      {!e.fecha && !TERMINADOS.includes(e.estado) && <span className="text-tenue"> · {e.reservaLiberada ? 'Sin reserva vigente' : 'Sin fecha'}</span>}
+                      {marcaFecha(e) && <span className="text-tenue"> · {marcaFecha(e)}</span>}
                     </p>
-                    {/* Antes la tarjeta tambien mostraba fecha, horario y lugar (ahora solo en el detalle):
-                    <p className="mt-2 flex items-center gap-1 text-xs text-texto tabular">
-                      <Icono nombre="calendar_today" className="text-[14px] text-texto-2" />
-                      {textoFechas(e)}
-                      {esVariosDias(e) && <span className="text-texto-2">· {numeroDias(e)} días</span>}
-                      {textoHorario(e) && <span className="text-texto-2">· {textoHorario(e)}</span>}
-                    </p>
-                    <p className="mt-1 flex items-center gap-1 text-xs text-texto-2">
-                      <Icono nombre={e.esAlAireLibre ? 'wb_sunny' : 'location_on'} className="text-[14px]" />
-                      <span className="truncate">{e.espacioNombre ?? `Espacio ${e.espacio}`}</span>
-                    </p> */}
                     <p className="mt-2 flex items-center gap-1 text-xs text-texto-2 tabular">
                       <Icono nombre="groups" className="text-[14px]" />
                       Cupo {Number(e.cupoMaximo).toLocaleString('es-MX')}
@@ -1702,31 +973,14 @@ export default function Eventos() {
                         </Globo>
                       </td>
                       <td className="truncate px-3 py-2.5 text-sm text-texto-2">{e.categoriaNombre ?? `Categoría ${e.categoria}`}</td>
-                      {/* Antes: celdas de Fecha, Horario y Lugar (ahora solo en el detalle; Reservas de David ya las muestra)
-                      <td className="px-3 py-2.5 text-sm text-texto tabular">
-                      <span className={e.fecha ? '' : 'text-tenue'}>{textoFechas(e)}</span>
-                      {esVariosDias(e) && <span className="ml-1 text-xs text-texto-2">({numeroDias(e)} días)</span>}
-                      </td>
-                      <td className="px-3 py-2.5 text-sm text-texto-2 tabular">{textoHorario(e) || '—'}</td>
-                      <td className="px-3 py-2.5 text-sm text-texto-2">
-                      <span className="flex min-w-0 items-center gap-1.5">
-                      {e.esAlAireLibre && (
-                      <Globo texto="Al aire libre">
-                      <Icono nombre="wb_sunny" className="text-[16px] text-aviso-texto" />
-                      </Globo>
-                      )}
-                      <span className="truncate">{e.espacioNombre ?? `Espacio ${e.espacio}`}</span>
-                      </span>
-                      </td>
-                      */}
                       <td className="truncate px-3 py-2.5 text-sm text-texto-2">
                         <NombreOrganizador e={e} />
                       </td>
                       <td className="px-3 py-2.5 text-right text-sm text-texto tabular">{Number(e.cupoMaximo).toLocaleString('es-MX')}</td>
                       <td className="px-3 py-2.5">
-                        <Estado valor={e.estado} />
+                        <EstadoEvento e={e} />
                         {/* Registrado sin fecha: aun no tiene reserva (se aparta en Reservas) */}
-                        {!e.fecha && !TERMINADOS.includes(e.estado) && <span className="mt-0.5 block text-xs text-tenue">{e.reservaLiberada ? 'Sin reserva vigente' : 'Sin fecha'}</span>}
+                        {marcaFecha(e) && <span className="mt-0.5 block text-xs text-tenue">{marcaFecha(e)}</span>}
                       </td>
                       {organiza && (
                         <td className="px-4 py-2">
@@ -1750,7 +1004,6 @@ export default function Eventos() {
         evento={formulario?.evento ?? null}
         categorias={categorias.datos ?? []}
         espacios={espacios.datos ?? []}
-        titulos={titulos}
         catalogosListos={catalogosListos}
         onCerrar={() => setFormulario(null)}
         onGuardado={(e, accion) => {
@@ -1765,46 +1018,16 @@ export default function Eventos() {
         version={version + versionReservas}
         onApartar={(e) => {
           setDetalle(null);
-          abrirReserva({ eventoId: e.id, ...(e.espacio ? { espacioId: e.espacio } : {}) });
+          // Al confirmar, la reserva queda a la vista en su calendario
+          navegar('/agenda', { state: { nuevaReserva: { eventoId: e.id, ...(e.espacio ? { espacioId: e.espacio } : {}) } } });
         }}
         puedeModificar={puedeModificar}
         colorDe={colorDe}
         onCerrar={() => setDetalle(null)}
         onEditar={(e) => abrirFormulario('editar', e)}
-        onReprogramar={(e) => {
-          setDetalle(null);
-          setReprogramar(e);
-        }}
-        onUbicacion={(e) => {
-          setDetalle(null);
-          setUbicacion(e);
-        }}
+        onReprogramar={decidirEnAgenda('reprogramar')}
+        onUbicacion={decidirEnAgenda('ubicacion')}
         onEstado={(e, tipo) => setConfirmar({ tipo, evento: e })}
-      />
-
-      <PanelReprogramar
-        key={`reprogramar-${reprogramar?.id ?? 0}`}
-        evento={reprogramar}
-        titulos={titulos}
-        onCerrar={() => setReprogramar(null)}
-        onHecho={(e, txt) => {
-          setReprogramar(null);
-          terminar(e, txt);
-          setDetalle(e.id);
-        }}
-      />
-
-      <PanelUbicacion
-        key={`ubicacion-${ubicacion?.id ?? 0}`}
-        evento={ubicacion}
-        espacios={espacios.datos ?? []}
-        titulos={titulos}
-        onCerrar={() => setUbicacion(null)}
-        onHecho={(e, txt) => {
-          setUbicacion(null);
-          terminar(e, txt);
-          setDetalle(e.id);
-        }}
       />
 
       <Confirmar

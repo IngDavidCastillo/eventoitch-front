@@ -7,6 +7,8 @@ import { Route, Routes } from 'react-router-dom';
 import RutaPrivada from './components/RutaPrivada';
 import VigilanteSesion from './components/VigilanteSesion';
 import Shell, { CargandoPagina } from './components/layout/Shell';
+import AbrirReservaPendiente from './components/AbrirReservaPendiente';
+import MoverEventoEnAgenda from './components/MoverEventoEnAgenda';
 import Inicio from './pages/Inicio';
 import Login from './pages/Login';
 
@@ -39,7 +41,7 @@ export default function App() {
         <Route path="/restablecer" element={<Restablecer />} />
         <Route path="/panel" element={privada(<Panel />)} />
         <Route path="/dashboard" element={privada(<Panel />)} />
-        <Route path="/agenda" element={privada(<Agenda />)} />
+        <Route path="/agenda" element={privada(<MoverEventoEnAgenda><AbrirReservaPendiente /><Agenda /></MoverEventoEnAgenda>)} />
         <Route path="/reservas" element={privada(<Reservas />)} />
         <Route path="/usuarios" element={privada(<Usuarios />, ['ADMINISTRADOR'])} />
         <Route path="/perfil" element={privada(<Perfil />)} />
