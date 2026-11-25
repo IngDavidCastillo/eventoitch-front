@@ -624,6 +624,16 @@ export default function MoverEventoEnAgenda({ children }) {
             <ErrorServicio servicio="El servicio de espacios" mensaje={espacios.error.message} onReintentar={espacios.recargar} />
           ) : !espacios.datos ? (
             cargando
+          ) : !evento.fecha ? (
+            // Sin fecha (la Agenda no respondio o ya no tiene reserva) no hay dias que mover
+            <div className="space-y-3 p-5">
+              <Aviso tipo="aviso" titulo="No se conoce la fecha del evento">
+                La Agenda no respondió o el evento ya no tiene lugar apartado. Vuelve a intentarlo en un momento.
+              </Aviso>
+              <Boton variante="secundario" onClick={actual.recargar}>
+                Reintentar
+              </Boton>
+            </div>
           ) : (
             <CambiarEspacio key={evento.id} evento={evento} espacios={espacios.datos} titulos={titulos} onHecho={hecho} onCerrar={() => volver()} />
           )}
