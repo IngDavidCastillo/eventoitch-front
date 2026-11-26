@@ -12,7 +12,10 @@ import { TIPOS, documento, nombreCompleto, nombreTipo, telefono } from '../utils
 const CON_RFC = ['DOCENTE', 'ADMINISTRADOR', 'ORGANIZADOR'];
 const VACIO = { tipoUsuario: 'DOCENTE', nombre: '', apellidos: '', numeroControl: '', rfc: '', email: '', telefono: '' };
 
-function NuevoUsuario({ abierto, onCerrar, onCreado }) {
+// Solo el SUPER ADMINISTRADOR puede crear o nombrar administradores; a un admin normal se le esconde esa opcion
+const tiposSegunRol = (soySuper) => Object.entries(TIPOS).filter(([v]) => soySuper || v !== 'ADMINISTRADOR');
+
+function NuevoUsuario({ abierto, onCerrar, onCreado, soySuper }) {
   const { sesion } = useAuth();
   const [form, setForm] = useState(VACIO);
   // Foto elegida (ya recortada); se sube a ms-usuarios despues de crear la cuenta, cuando ya hay id
@@ -107,7 +110,7 @@ function NuevoUsuario({ abierto, onCerrar, onCreado }) {
       <div className="grid gap-4 sm:grid-cols-2">
         <Campo etiqueta="Tipo de usuario" obligatorio className="sm:col-span-2">
           <Selector name="tipoUsuario" value={form.tipoUsuario} onChange={cambiar} className="h-11">
-            {Object.entries(TIPOS).map(([v, t]) => (
+            {tiposSegunRol(soySuper).map(([v, t]) => (
               <option key={v} value={v}>
                 {t}
               </option>
@@ -297,7 +300,7 @@ function RestablecerPassword({ usuario, onCerrar, onListo, onEnlace }) {
 // Solo el ADMINISTRADOR. ms-usuarios exige el documento del tipo nuevo: RFC para DOCENTE, ORGANIZADOR y
 // ADMINISTRADOR, numero de control para ESTUDIANTE. Si falta, se pide aqui. El rol nuevo se aplica en el
 // siguiente inicio de sesion de esa persona y le llega la alerta 3 por correo.
-function CambiarTipo({ usuario, onCerrar, onListo }) {
+function CambiarTipo({ usuario, onCerrar, onListo, soySuper }) {
   const { sesion } = useAuth();
   const [tipo, setTipo] = useState('');
   const [rfc, setRfc] = useState('');
@@ -361,7 +364,7 @@ function CambiarTipo({ usuario, onCerrar, onListo }) {
         </p>
         <Campo etiqueta="Tipo de usuario" obligatorio error={!pideRfc && !pideNumero ? error : null}>
           <Selector value={tipo} onChange={(e) => { setTipo(e.target.value); setError(null); }} className="h-11">
-            {Object.entries(TIPOS).map(([v, t]) => (
+            {tiposSegunRol(soySuper).map(([v, t]) => (
               <option key={v} value={v}>
                 {t}
               </option>
@@ -597,6 +600,8 @@ export default function Usuarios() {
   }
 
   const activos = todos.filter((u) => u.estado === 'ACTIVO').length;
+  // ¿La persona que está viendo esta pantalla es el súper administrador? (se lee de su propia fila)
+  const soySuper = !!todos.find((u) => u.id === sesion.usuarioId)?.superAdministrador;
 
   return (
     <>
@@ -671,7 +676,14 @@ export default function Usuarios() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-sm text-texto">{nombreTipo(u.tipoUsuario)}</td>
+                      <td className="px-3 py-3 text-sm text-texto">
+                        {nombreTipo(u.tipoUsuario)}
+                        {u.superAdministrador && (
+                          <Insignia tono="marino" className="mt-1">
+                            Súper admin
+                          </Insignia>
+                        )}
+                      </td>
                       <td className="px-3 py-3">
                         <p className="text-[11px] text-texto-2">{doc.etiqueta}</p>
                         <p className="font-mono text-xs text-texto">{doc.valor}</p>
@@ -681,7 +693,12 @@ export default function Usuarios() {
                         <Estado valor={u.estado} />
                       </td>
                       <td className="px-5 py-3 text-right">
-                        {!yo && (
+                        {!yo && u.superAdministrador && !soySuper && (
+                          <span className="inline-flex items-center gap-1 text-xs text-texto-2">
+                            <Icono nombre="lock" className="text-[14px]" /> Protegido
+                          </span>
+                        )}
+                        {!yo && (soySuper || !u.superAdministrador) && (
                           <div className="flex justify-end gap-1">
                             {u.estado === 'ACTIVO' && (
                               <Boton variante="fantasma" tamano="sm" icono="edit" onClick={() => setEditar(u)} title="Editar los datos del usuario">
@@ -726,6 +743,7 @@ export default function Usuarios() {
 
       <NuevoUsuario
         abierto={nuevo}
+        soySuper={soySuper}
         onCerrar={() => setNuevo(false)}
         onCreado={(f, r, avisoFoto) => {
           setNuevo(false);
@@ -746,6 +764,7 @@ export default function Usuarios() {
 
       <CambiarTipo
         usuario={cambiarTipo}
+        soySuper={soySuper}
         onCerrar={() => setCambiarTipo(null)}
         onListo={(u, nuevo) => {
           setCambiarTipo(null);
