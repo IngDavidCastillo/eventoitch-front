@@ -12,7 +12,10 @@ import { TIPOS, documento, nombreCompleto, nombreTipo, telefono } from '../utils
 const CON_RFC = ['DOCENTE', 'ADMINISTRADOR', 'ORGANIZADOR'];
 const VACIO = { tipoUsuario: 'DOCENTE', nombre: '', apellidos: '', numeroControl: '', rfc: '', email: '', telefono: '' };
 
-function NuevoUsuario({ abierto, onCerrar, onCreado }) {
+// Solo el SUPER ADMINISTRADOR puede crear o nombrar administradores; a un admin normal se le esconde esa opcion
+const tiposSegunRol = (soySuper) => Object.entries(TIPOS).filter(([v]) => soySuper || v !== 'ADMINISTRADOR');
+
+function NuevoUsuario({ abierto, onCerrar, onCreado, soySuper }) {
   const { sesion } = useAuth();
   const [form, setForm] = useState(VACIO);
   // Foto elegida (ya recortada); se sube a ms-usuarios despues de crear la cuenta, cuando ya hay id
@@ -107,7 +110,7 @@ function NuevoUsuario({ abierto, onCerrar, onCreado }) {
       <div className="grid gap-4 sm:grid-cols-2">
         <Campo etiqueta="Tipo de usuario" obligatorio className="sm:col-span-2">
           <Selector name="tipoUsuario" value={form.tipoUsuario} onChange={cambiar} className="h-11">
-            {Object.entries(TIPOS).map(([v, t]) => (
+            {tiposSegunRol(soySuper).map(([v, t]) => (
               <option key={v} value={v}>
                 {t}
               </option>
@@ -297,7 +300,7 @@ function RestablecerPassword({ usuario, onCerrar, onListo, onEnlace }) {
 // Solo el ADMINISTRADOR. ms-usuarios exige el documento del tipo nuevo: RFC para DOCENTE, ORGANIZADOR y
 // ADMINISTRADOR, numero de control para ESTUDIANTE. Si falta, se pide aqui. El rol nuevo se aplica en el
 // siguiente inicio de sesion de esa persona y le llega la alerta 3 por correo.
-function CambiarTipo({ usuario, onCerrar, onListo }) {
+function CambiarTipo({ usuario, onCerrar, onListo, soySuper }) {
   const { sesion } = useAuth();
   const [tipo, setTipo] = useState('');
   const [rfc, setRfc] = useState('');
@@ -361,7 +364,7 @@ function CambiarTipo({ usuario, onCerrar, onListo }) {
         </p>
         <Campo etiqueta="Tipo de usuario" obligatorio error={!pideRfc && !pideNumero ? error : null}>
           <Selector value={tipo} onChange={(e) => { setTipo(e.target.value); setError(null); }} className="h-11">
-            {Object.entries(TIPOS).map(([v, t]) => (
+            {tiposSegunRol(soySuper).map(([v, t]) => (
               <option key={v} value={v}>
                 {t}
               </option>
@@ -391,6 +394,129 @@ function CambiarTipo({ usuario, onCerrar, onListo }) {
   );
 }
 
+// ---------- Editar los datos de un usuario (PUT /usuarios/{id}) ----------
+// Solo el ADMINISTRADOR. Deja cambiar nombre, apellidos, correo, telefono y el documento (numero de
+// control o RFC) de cualquier persona. El tipo de usuario se cambia con el boton "Tipo". Si se cambia
+// el correo, ms-usuarios lo deja sin verificar: manda un codigo al correo nuevo y avisa al anterior.
+function EditarUsuario({ usuario, onCerrar, onListo }) {
+  const { sesion } = useAuth();
+  const [form, setForm] = useState(VACIO);
+  const [errores, setErrores] = useState({});
+  const [error, setError] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    if (usuario) {
+      setForm({
+        tipoUsuario: usuario.tipoUsuario,
+        nombre: usuario.nombre ?? '',
+        apellidos: usuario.apellidos ?? '',
+        numeroControl: usuario.numeroControl ?? '',
+        rfc: usuario.rfc ?? '',
+        email: usuario.email ?? '',
+        telefono: usuario.telefono ?? '',
+      });
+      setErrores({});
+      setError(null);
+    }
+  }, [usuario]);
+
+  const cambiar = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+  const conRfc = CON_RFC.includes(form.tipoUsuario);
+  const cambioCorreo = usuario && form.email.trim() !== usuario.email;
+
+  async function guardar() {
+    const x = {};
+    if (!form.nombre.trim()) x.nombre = 'Obligatorio';
+    if (!form.apellidos.trim()) x.apellidos = 'Obligatorio';
+    if (!/^\S+@\S+\.\S+$/.test(form.email)) x.email = 'Correo no válido';
+    if (form.tipoUsuario === 'ESTUDIANTE' && !form.numeroControl.trim()) x.numeroControl = 'El estudiante necesita número de control';
+    if (conRfc && !form.rfc.trim()) x.rfc = 'Este tipo necesita RFC';
+    if (form.telefono && !/^[0-9]{10,15}$/.test(form.telefono)) x.telefono = 'Solo números, de 10 a 15 dígitos';
+    setErrores(x);
+    if (Object.keys(x).length) return;
+
+    setGuardando(true);
+    setError(null);
+    try {
+      // ms-usuarios pide el perfil completo; el tipo se deja igual (se cambia en el boton "Tipo")
+      const nuevo = await actualizarUsuario(
+        usuario.id,
+        {
+          tipoUsuario: usuario.tipoUsuario,
+          nombre: form.nombre.trim(),
+          apellidos: form.apellidos.trim(),
+          numeroControl: form.tipoUsuario === 'ESTUDIANTE' ? form.numeroControl.trim() : null,
+          rfc: conRfc ? form.rfc.trim().toUpperCase() : null,
+          email: form.email.trim(),
+          telefono: form.telefono.trim() || null,
+          fotografiaUrl: usuario.fotografiaUrl ?? null,
+        },
+        sesion.token,
+      );
+      onListo(usuario, nuevo, cambioCorreo);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <Panel
+      abierto={!!usuario}
+      onCerrar={() => !guardando && onCerrar()}
+      titulo={usuario ? `Editar a ${nombreCompleto(usuario)}` : 'Editar usuario'}
+      subtitulo="Cambia los datos del perfil. El tipo de usuario se cambia con el botón Tipo."
+      pie={
+        <div className="flex justify-end gap-2">
+          <Boton variante="secundario" onClick={onCerrar} disabled={guardando}>
+            Cancelar
+          </Boton>
+          <Boton icono="save" cargando={guardando} onClick={guardar}>
+            Guardar cambios
+          </Boton>
+        </div>
+      }
+    >
+      {error && (
+        <Aviso tipo="error" className="mb-4">
+          {error}
+        </Aviso>
+      )}
+      <div className="grid sm:grid-cols-2 gap-4">
+        <Campo etiqueta="Nombre" obligatorio error={errores.nombre}>
+          <Entrada name="nombre" value={form.nombre} onChange={cambiar} error={errores.nombre} />
+        </Campo>
+        <Campo etiqueta="Apellidos" obligatorio error={errores.apellidos}>
+          <Entrada name="apellidos" value={form.apellidos} onChange={cambiar} error={errores.apellidos} />
+        </Campo>
+        {form.tipoUsuario === 'ESTUDIANTE' && (
+          <Campo etiqueta="Número de control" obligatorio error={errores.numeroControl} className="sm:col-span-2">
+            <Entrada icono="badge" name="numeroControl" maxLength={20} value={form.numeroControl} onChange={cambiar} error={errores.numeroControl} />
+          </Campo>
+        )}
+        {conRfc && (
+          <Campo etiqueta="RFC" obligatorio error={errores.rfc} className="sm:col-span-2">
+            <Entrada icono="badge" name="rfc" maxLength={13} value={form.rfc} onChange={cambiar} error={errores.rfc} className="uppercase" />
+          </Campo>
+        )}
+        <Campo etiqueta="Correo" obligatorio error={errores.email} className="sm:col-span-2">
+          <Entrada icono="mail" name="email" type="email" value={form.email} onChange={cambiar} error={errores.email} />
+        </Campo>
+        <Campo etiqueta="Teléfono" error={errores.telefono} ayuda="Opcional, 10 dígitos." className="sm:col-span-2">
+          <Entrada icono="call" name="telefono" inputMode="numeric" value={form.telefono} onChange={cambiar} error={errores.telefono} />
+        </Campo>
+      </div>
+      {cambioCorreo && (
+        <Aviso tipo="aviso" className="mt-4">
+          Vas a cambiar el correo. La cuenta quedará sin verificar: le mandaremos un código al correo nuevo y un aviso al anterior. No podrá iniciar sesión hasta confirmarlo.
+        </Aviso>
+      )}
+    </Panel>
+  );
+}
+
 export default function Usuarios() {
   const { sesion } = useAuth();
   const datos = useDatos(() => listarUsuarios({}, sesion.token), [sesion.token]);
@@ -403,6 +529,7 @@ export default function Usuarios() {
   const [mensaje, setMensaje] = useState(null);
   const [restablecer, setRestablecer] = useState(null);
   const [cambiarTipo, setCambiarTipo] = useState(null);
+  const [editar, setEditar] = useState(null);
   // Quitar la verificacion en dos pasos a quien perdio el celular y sus codigos de respaldo
   const [sinDosPasos, setSinDosPasos] = useState(null);
 
@@ -473,6 +600,8 @@ export default function Usuarios() {
   }
 
   const activos = todos.filter((u) => u.estado === 'ACTIVO').length;
+  // ¿La persona que está viendo esta pantalla es el súper administrador? (se lee de su propia fila)
+  const soySuper = !!todos.find((u) => u.id === sesion.usuarioId)?.superAdministrador;
 
   return (
     <>
@@ -547,7 +676,14 @@ export default function Usuarios() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-sm text-texto">{nombreTipo(u.tipoUsuario)}</td>
+                      <td className="px-3 py-3 text-sm text-texto">
+                        {nombreTipo(u.tipoUsuario)}
+                        {u.superAdministrador && (
+                          <Insignia tono="marino" className="mt-1">
+                            Súper admin
+                          </Insignia>
+                        )}
+                      </td>
                       <td className="px-3 py-3">
                         <p className="text-[11px] text-texto-2">{doc.etiqueta}</p>
                         <p className="font-mono text-xs text-texto">{doc.valor}</p>
@@ -557,8 +693,18 @@ export default function Usuarios() {
                         <Estado valor={u.estado} />
                       </td>
                       <td className="px-5 py-3 text-right">
-                        {!yo && (
+                        {!yo && u.superAdministrador && !soySuper && (
+                          <span className="inline-flex items-center gap-1 text-xs text-texto-2">
+                            <Icono nombre="lock" className="text-[14px]" /> Protegido
+                          </span>
+                        )}
+                        {!yo && (soySuper || !u.superAdministrador) && (
                           <div className="flex justify-end gap-1">
+                            {u.estado === 'ACTIVO' && (
+                              <Boton variante="fantasma" tamano="sm" icono="edit" onClick={() => setEditar(u)} title="Editar los datos del usuario">
+                                Editar
+                              </Boton>
+                            )}
                             {u.estado === 'ACTIVO' && (
                               <Boton variante="fantasma" tamano="sm" icono="manage_accounts" onClick={() => setCambiarTipo(u)} title="Cambiar tipo de usuario">
                                 Tipo
@@ -597,6 +743,7 @@ export default function Usuarios() {
 
       <NuevoUsuario
         abierto={nuevo}
+        soySuper={soySuper}
         onCerrar={() => setNuevo(false)}
         onCreado={(f, r, avisoFoto) => {
           setNuevo(false);
@@ -617,10 +764,26 @@ export default function Usuarios() {
 
       <CambiarTipo
         usuario={cambiarTipo}
+        soySuper={soySuper}
         onCerrar={() => setCambiarTipo(null)}
         onListo={(u, nuevo) => {
           setCambiarTipo(null);
           setMensaje({ tipo: 'exito', texto: `${nombreCompleto(u)} ahora es ${nombreTipo(nuevo?.tipoUsuario ?? '')}. Se aplica la próxima vez que inicie sesión y le llegó un aviso por correo.` });
+          datos.recargar();
+        }}
+      />
+
+      <EditarUsuario
+        usuario={editar}
+        onCerrar={() => setEditar(null)}
+        onListo={(u, nuevo, cambioCorreo) => {
+          setEditar(null);
+          setMensaje({
+            tipo: cambioCorreo ? 'aviso' : 'exito',
+            texto: cambioCorreo
+              ? `Se guardaron los datos de ${nombreCompleto(nuevo)}. Como cambió el correo, le mandamos un código a ${nuevo?.email} y no podrá entrar hasta confirmarlo.`
+              : `Se guardaron los datos de ${nombreCompleto(nuevo)}.`,
+          });
           datos.recargar();
         }}
       />
